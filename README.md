@@ -23,3 +23,27 @@
  <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/latent_space/NKI%2BVGH_real_latent_linear_inter.png" width="500">
 </p>
 
+* [**Survival Tissue Predominance**](https://github.com/AdalbertoCq/Pathology-GAN/tree/master/demos/survival):
+  - **NKI**: 
+    1. Densities  of  tissue  architectures  in  patients  with  greater  **(a)**  and  lesser **(b)**  than  5  year  survival  of  NKI  cohort. Tissue predominance on high-risk patients.
+       <p align="center">
+           <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/NKI_real_More_presence_in_lesser_5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+        <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/NKI_real_More_presence_in_lesser_5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+       </p>
+    2. Densities  of  tissue  architectures  in  patients  with  greater  **(a)**  and  lesser **(b)**  than  5  year  survival  of  NKI  cohort. Tissue predominance on low-risk patients.
+       <p align="center">
+           <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/NKI_real_More_presence_in_greater__5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+        <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/NKI_real_More_presence_in_greater__5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+       </p>
+  - **VGH**: 
+    1. Densities  of  tissue  architectures  in  patients  with  greater  **(a)**  and  lesser **(b)**  than  5  year  survival  of  VGH  cohort. Tissue predominance on high-risk patients.
+       <p align="center">
+           <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/VGH_real_More_presence_in_lesser_5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+        <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/VGH_real_More_presence_in_lesser_5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+       </p>
+    2. Densities  of  tissue  architectures  in  patients  with  greater  **(a)**  and  lesser **(b)**  than  5  year  survival  of  VGH  cohort. Tissue predominance on low-risk patients.
+       <p align="center">
+           <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/VGH_real_More_presence_in_greater__5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+        <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/survival/VGH_real_More_presence_in_greater__5_years_Patches_greater__5_years_n_comp_200.png" width="375">
+       </p>
+   
