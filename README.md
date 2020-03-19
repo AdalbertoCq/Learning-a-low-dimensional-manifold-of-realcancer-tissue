@@ -63,3 +63,47 @@ This is a sample of an original TMA image:
 <p align="center">
   <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/original_tma.jpg" width="400">
 </p>   
+
+## Pre-trained Models:
+
+You can find pre-trained weights for the model [here](https://figshare.com/s/0a311b5418f21ab2ebd4)
+
+## Python Enviroment:
+```
+h5py                    2.9.0
+numpy                   1.16.1
+pandas                  0.24.1
+scikit-image            0.14.2
+scikit-learn            0.20.2
+scipy                   1.2.0
+seaborn                 0.9.0
+sklearn                 0.0
+tensorboard             1.12.2
+tensorflow              1.12.0
+tensorflow-probability  0.5.0
+python                  3.6.7
+```
+
+## Training PathologyGAN:
+You can find a pre-processed HDF5 file with patches of 224x224x3 resolution [here](https://drive.google.com/open?id=1LpgW85CVA48C8LnpmsDMdHqeCGHKsAxw), each of the patches also contains labeling information of the estrogen receptor status and survival time. Place the 'vgh_nki' under the 'dataset' folder in the main PathologyGAN path.
+
+Each model was trained on an NVIDIA Titan Xp 12 GB for 45 epochs, approximately 80 hours.
+
+```
+usage: run_pathgan_encoder.py [-h] [--epochs EPOCHS] [--batch_size BATCH_SIZE]
+                      [--model MODEL]
+
+PathologyGAN Encoder trainer.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --epochs EPOCHS       Number epochs to run: default is 45 epochs.
+  --batch_size BATCH_SIZE
+                        Batch size, default size is 64.
+  --model MODEL         Model name.
+```
+
+* Pathology GAN Encoder training example:
+```
+python3 run_pathgan_encoder.py 
+```
