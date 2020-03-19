@@ -64,7 +64,7 @@ This is a sample of an original TMA image:
   <img src="https://github.com/AdalbertoCq/Learning-a-low-dimensional-manifold-of-realcancer-tissue/blob/master/demos/original_tma.jpg" width="400">
 </p>   
 
-## Pre-trained Models:
+## Pre-trained Model:
 
 You can find pre-trained weights for the model [here]()
 
@@ -84,7 +84,7 @@ tensorflow-probability  0.5.0
 python                  3.6.7
 ```
 
-## Training PathologyGAN:
+## Training PathologyGAN Encoder:
 You can find a pre-processed HDF5 file with patches of 224x224x3 resolution [here](https://drive.google.com/open?id=1LpgW85CVA48C8LnpmsDMdHqeCGHKsAxw), each of the patches also contains labeling information of the estrogen receptor status and survival time. Place the 'vgh_nki' under the 'dataset' folder in the main PathologyGAN path.
 
 Each model was trained on an NVIDIA Titan Xp 12 GB for 45 epochs, approximately 80 hours.
