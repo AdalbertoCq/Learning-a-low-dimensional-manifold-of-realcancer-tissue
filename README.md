@@ -66,7 +66,7 @@ This is a sample of an original TMA image:
 
 ## Pre-trained Model:
 
-You can find pre-trained weights for the model [here]()
+You can find pre-trained weights for the model [here](https://figshare.com/articles/PathologyGAN_Encoder_tar_gz/12006492)
 
 ## Python Enviroment:
 ```
