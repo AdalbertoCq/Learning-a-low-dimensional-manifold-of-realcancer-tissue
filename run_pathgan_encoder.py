@@ -8,7 +8,7 @@ from models.generative.gans.PathologyGAN_Encoder import PathologyGAN_Encoder
 parser = argparse.ArgumentParser(description='PathologyGAN Encoder trainer.')
 parser.add_argument('--epochs', dest='epochs', type=int, default=45, help='Number epochs to run: default is 45 epochs.')
 parser.add_argument('--batch_size', dest='batch_size', type=int, default=64, help='Batch size, default size is 64.')
-parser.add_argument('--model', dest='model', type=str, default='PathologyGAN_Enc_lerp_MSE_W_dis_inc', help='Model name.')
+parser.add_argument('--model', dest='model', type=str, default='PathologyGAN_Encoder', help='Model name.')
 args = parser.parse_args()
 epochs = args.epochs
 batch_size = args.batch_size
