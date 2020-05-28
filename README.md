@@ -1,5 +1,5 @@
 # Learning a low dimensional manifold of real cancer tissue with Pathology-GAN
-* **[Quiros A.C., Murray-Smith R., Yuan K. 'Learning a low dimensional manifold of real cancer tissue with PathologyGAN'. 2020](https://arxiv.org/abs/2004.06517)** 
+* **[Quiros A.C., Murray-Smith R., Yuan K. Learning a low dimensional manifold of real cancer tissue with PathologyGAN. 2020](https://arxiv.org/abs/2004.06517)** 
  
 
 **Abstract:**
