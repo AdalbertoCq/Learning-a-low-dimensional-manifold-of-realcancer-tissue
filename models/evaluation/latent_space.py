@@ -46,10 +46,15 @@ def combine_images(imgs, spacing=0.07):
     offset_w = int(spacing*width)
     
     grid = np.ones((2*height+offset_h, 2*width+offset_w, channels))
-    grid[0:height, 0:width, :] = imgs[0, :, :, :]/255.
-    grid[0:height, width+offset_w:, :] = imgs[1, :, :, :]/255.
-    grid[height+offset_h:, :width] = imgs[2, :, :, :]/255.
-    grid[height+offset_h:, width+offset_w:, :] = imgs[3, :, :, :]/255.
+    for i in range(0,imgs.shape[0],1):
+        if i == 0:
+            grid[0:height, 0:width, :] = imgs[0, :, :, :]/255.
+        elif i ==1:
+            grid[0:height, width+offset_w:, :] = imgs[1, :, :, :]/255.
+        elif i ==2:
+            grid[height+offset_h:, :width] = imgs[2, :, :, :]/255.
+        else:
+            grid[height+offset_h:, width+offset_w:, :] = imgs[3, :, :, :]/255.
     return grid
 
 def get_images_gmm(labels):
@@ -63,14 +68,14 @@ def get_images_label(l_ind, label, imgs):
     indeces = l_ind[label][:4]
     return imgs[indeces, :, :, :]
 
-def find_gaussian(gmm, xy):
+def find_gaussian(gmm, xy, taken=None):
     xy = np.array(xy)
     distance = np.Infinity
     min_mean = None
     min_label = None
     for label, mean in enumerate(gmm.means_):
         new = np.sqrt(np.sum(np.square(mean-xy)))
-        if new < distance: 
+        if new < distance and label not in taken: 
             distance = new
             min_mean = mean
             min_label = label

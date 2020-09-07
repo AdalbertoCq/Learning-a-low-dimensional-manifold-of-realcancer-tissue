@@ -33,6 +33,17 @@ def embedding(shape, init='xavier', power_iterations=1, display=True):
         print('Emb. Layer:     Output Shape: %s' % (embedding.shape))
     return embedding
     
+def style_extract(inputs, latent_dim, spectral, init, regularizer, scope, power_iterations=1):
+    with tf.variable_scope('style_extract_%s' % scope) :
+        # mean 
+        means = tf.reduce_mean(inputs, axis=[1,2], keep_dims=True)
+        # std
+        stds = tf.sqrt(tf.reduce_mean((inputs-means)**2, axis=[1,2], keep_dims=True))
+        means = tf.reduce_mean(means, axis=[1,2])
+        stds = tf.reduce_mean(stds, axis=[1,2])
+        c = tf.concat([means, stds], axis=-1)
+        latent = dense(inputs=c, out_dim=latent_dim, use_bias=True, spectral=spectral, power_iterations=power_iterations, init=init, regularizer=regularizer, display=False, scope=1)
+    return latent
 
 def attention_block(x, scope, spectral=True, init='xavier', regularizer=None, power_iterations=1, display=True):
 
@@ -65,6 +76,48 @@ def attention_block(x, scope, spectral=True, init='xavier', regularizer=None, po
 
     if display:
         print('Att. Layer:     Scope=%15s Channels %5s Output Shape: %s' % 
+            (str(scope)[:14], channels, y.shape))
+
+    return y
+
+
+# Some memory savings with this one.
+def attention_block_2(x, scope, spectral=True, init='xavier', regularizer=None, power_iterations=1, display=True):
+
+    batch_size, height, width, channels = x.get_shape().as_list()
+    with tf.variable_scope('attention_block_%s' % scope):
+
+        # Global value for all pixels, measures how important is the context for each of them.
+        gamma = tf.get_variable('gamma', shape=(1), initializer=tf.constant_initializer(0.0))
+        f_g_channels = channels//8
+        h_channels = channels//2
+
+        location_n = height*width
+        downsampled_n = location_n//4
+
+        f = convolutional(inputs=x, output_channels=f_g_channels, filter_size=1, stride=1, padding='SAME', conv_type='convolutional', spectral=True, init=init, regularizer=regularizer, power_iterations=power_iterations, scope=1, display=False)
+        f = tf.layers.max_pooling2d(inputs=f, pool_size=[2, 2], strides=2)
+
+        g = convolutional(inputs=x, output_channels=f_g_channels, filter_size=1, stride=1, padding='SAME', conv_type='convolutional', spectral=True, init=init, regularizer=regularizer, power_iterations=power_iterations, scope=2, display=False)
+        
+        h = convolutional(inputs=x, output_channels=h_channels, filter_size=1, stride=1, padding='SAME', conv_type='convolutional', spectral=True, init=init, regularizer=regularizer, power_iterations=power_iterations, scope=3, display=False)
+        h = tf.layers.max_pooling2d(inputs=h, pool_size=[2, 2], strides=2)
+
+        # Flatten f, g, and h per channel.
+        f_flat = tf.reshape(f, shape=tf.stack([tf.shape(x)[0], downsampled_n, f_g_channels]))
+        g_flat = tf.reshape(g, shape=tf.stack([tf.shape(x)[0], location_n, f_g_channels]))
+        h_flat = tf.reshape(h, shape=tf.stack([tf.shape(x)[0], downsampled_n, h_channels]))
+
+        attn = tf.matmul(g_flat, f_flat, transpose_b=True)
+        attn = tf.nn.softmax(attn)
+
+        o = tf.matmul(attn, h_flat)
+        o = tf.reshape(o, shape=tf.stack([tf.shape(x)[0], height, width, channels//2]))
+        o = convolutional(inputs=o, output_channels=channels, filter_size=1, stride=1, padding='SAME', conv_type='convolutional', spectral=True, init=init, regularizer=regularizer, power_iterations=power_iterations, scope=4, display=False)
+        y = gamma*o + x
+
+    if display:
+        print('Atv2 Layer:     Scope=%15s Channels %5s Output Shape: %s' % 
             (str(scope)[:14], channels, y.shape))
 
     return y
@@ -213,12 +266,15 @@ def dense(inputs, out_dim, scope, use_bias=True, spectral=False, power_iteration
     return output
 
 
-def residual_block(inputs, filter_size, stride, padding, scope, cond_label=None, is_training=True, normalization=None, noise_input_f=False, use_bias=True, spectral=False, activation=None, init='xavier', regularizer=None, power_iterations=1, display=True):
+def residual_block(inputs, filter_size, stride, padding, scope, cond_label=None, is_training=True, normalization=None, noise_input_f=False, use_bias=True, spectral=False, activation=None,
+                   style_extract_f=False, latent_dim=None, init='xavier', regularizer=None, power_iterations=1, display=True):
     channels = inputs.shape.as_list()[-1]
     with tf.variable_scope('resblock_%s' % scope):
         with tf.variable_scope('part_1'):
             # Convolutional
             net = convolutional(inputs, channels, filter_size, stride, padding, 'convolutional', scope=1, spectral=spectral, init=init, regularizer=regularizer, power_iterations=power_iterations, display=False)
+            if style_extract_f:
+                style_1 = style_extract(inputs=net, latent_dim=latent_dim, spectral=spectral, init=init, regularizer=regularizer, scope=1)
             if noise_input_f:
                net = noise_input(inputs=net, scope=1)
             # Normalization
@@ -230,6 +286,8 @@ def residual_block(inputs, filter_size, stride, padding, scope, cond_label=None,
         with tf.variable_scope('part_2'):
             # Convolutional
             net = convolutional(net, channels, filter_size, stride, padding, 'convolutional', scope=1, spectral=spectral, init=init, regularizer=regularizer, power_iterations=power_iterations, display=False)
+            if style_extract_f:
+                style_2 = style_extract(inputs=net, latent_dim=latent_dim, spectral=spectral, init=init, regularizer=regularizer, scope=2)
             if noise_input_f:
                net = noise_input(inputs=net, scope=2)
             # Normalization
@@ -243,6 +301,11 @@ def residual_block(inputs, filter_size, stride, padding, scope, cond_label=None,
         if display:
             print('ResN Layer:     Scope=%15s Channels %5s Filter_size=%2s  Stride=%2s Padding=%6s Conv_type=%15s Output Shape: %s' % 
             (str(scope)[:14], channels, filter_size, stride, padding, 'convolutional', output.shape))
+        
+        if style_extract_f:
+            style = style_1 + style_2
+            return output, style
+
         return output
 
 
@@ -273,3 +336,149 @@ def residual_block_dense(inputs, scope, cond_label=None, is_training=True, norma
         if display:
             print('ResN Layer:     Scope=%15s Channels %5s Output Shape: %s' % (str(scope)[:14], channels, output.shape))
         return output
+
+
+def conv_mod(inputs, label, output_channels, filter_size, stride, padding, conv_type, scope, init='xavier', regularizer=None, data_format='NHWC', output_shape=None, spectral=False, power_iterations=1, display=True):
+    with tf.variable_scope('conv_layer_%s' % scope):
+
+        # Weight Initlializer.
+        if init=='normal':
+            weight_init = tf.initializers.random_normal(stddev=0.02)
+        elif init=='orthogonal':
+            weight_init = tf.initializers.orthogonal()
+        else:
+            weight_init = tf.contrib.layers.xavier_initializer_conv2d()
+
+        # Style NN.
+
+        batch, height, width, input_channels = inputs.shape.as_list()
+
+        inter_dim = int((input_channels+label.shape.as_list()[-1])/2)
+        net = dense(inputs=label, out_dim=inter_dim, scope=1, spectral=spectral, display=False)
+        net = ReLU(net)
+        net = dense(inputs=net, out_dim=int(inter_dim/2), scope='gamma', spectral=spectral, display=False)
+        net = ReLU(net)
+        style = dense(inputs=net, out_dim=input_channels, scope='beta', spectral=spectral, display=False)
+
+        
+        # Filter Shapes.
+        if 'upscale' in conv_type: filter_shape = (filter_size, filter_size, output_channels, input_channels)   
+        else: filter_shape = (filter_size, filter_size, input_channels, output_channels)    
+
+        # Weight and Bias Initialization.
+        bias = tf.get_variable(name='bias', shape=[output_channels], initializer=tf.constant_initializer(0.0), trainable=True, dtype=tf.float32) 
+        filter = tf.get_variable(name='filter_conv', shape=filter_shape, initializer=weight_init, trainable=True, dtype=tf.float32, regularizer=regularizer)    
+        
+       # Type of convolutional operation.
+        if conv_type == 'upscale':
+            output_shape = [tf.shape(inputs)[0], height*2, width*2, output_channels]
+            # Weight filter initializer.
+            filter = tf.pad(filter, ([1,1], [1,1], [0,0], [0,0]), mode='CONSTANT')
+            filter = tf.add_n([filter[1:,1:], filter[:-1,1:], filter[1:,:-1], filter[:-1,:-1]])
+            if spectral: filter = spectral_normalization(filter, power_iterations)
+            strides = [1, 2, 2, 1]
+            # print('Input shape:', inputs.shape)
+            # print('Upscale filter shape:', filter.shape)
+            # print('Output filter shape:', output_shape)
+
+            # # filter (kernel, kernel, output_channels, input_channels)
+            # filter_f = filter[np.newaxis]
+            # # filter_f (batch, kernel, kernel, output_channels, input_channels)
+
+            # # filter_f (batch, kernel, kernel, output_channels, input_channels)
+            # # style[]  (batch, 1,      1,      1,               input_channels)                                                               
+            # filter_mod = filter_f * tf.cast(style[:, np.newaxis, np.newaxis, np.newaxis, :], filter.dtype)
+            # # filter_mod (batch, kernel, kernel, output_channels, input_channels)
+
+            # # norm (batch, output_channels)
+            # norm = tf.sqrt(tf.reduce_sum(tf.square(filter_mod), axis=[1,2,4])+1e-8)
+            # # filter_mod (batch, kernel, kernel, output_channels, input_channels)
+            # # norm       (batch, 1,      1,      output_channels, 1             )
+            # filter_demod = filter_mod*tf.cast(norm[:, np.newaxis, np.newaxis, :, np.newaxis], inputs.dtype)
+            # # filter_demod (batch, kernel, kernel, output_channels, input_channels)
+
+            # inputs = tf.reshape(inputs, [1, -1, height, width])
+            # # kernel, kernel, output, bactch, input
+            # transposed = tf.transpose(filter_demod, [1, 2, 3, 0, 4])
+            # filter_group = tf.reshape(transposed, [filter_demod.shape[1], filter_demod.shape[2], -1, filter_demod.shape[3]])
+            
+            # output = tf.nn.conv2d_transpose(value=inputs, filter=filter, output_shape=tf.stack(output_shape), strides=strides, padding=padding, data_format=data_format)
+            output = tf.nn.conv2d_transpose(value=inputs, filter=tf.cast(filter_group, inputs.dtype), output_shape=tf.stack(output_shape), strides=strides, padding=padding, data_format=data_format)
+            # print('After conv:', output.shape)
+            output = tf.reshape(output, [-1, 2*height, 2*width, output_channels])
+            # print('Final conv:', output.shape)
+
+        elif conv_type == 'convolutional':
+            strides = [1, stride, stride, 1]
+            if spectral: filter = spectral_normalization(filter, power_iterations)
+
+            ## Filter definitions.
+            # filter (kernel, kernel, input_channels, output_channels)
+            filter_f = filter[np.newaxis] 
+            # print('filter_f', filter_f.shape)
+
+            ## Modulation
+            # filter_f (batch, kernel, kernel, input_channels, output_channels)
+            # style[]  (batch, 1,      1,      input_channels, 1              )                                                               
+            filter_f = filter_f * tf.cast(style[:, np.newaxis, np.newaxis, :, np.newaxis], filter.dtype)
+            # print('filter_mod', filter_mod.shape)
+
+            ## Filter demodulation.
+            # norm (batch, output_channels)
+            norm = tf.sqrt(tf.reduce_sum(tf.square(filter_f), axis=[1,2,3]) + 1e-8)
+            # filter_mod (batch, kernel, kernel, input_channels, output_channels)
+            # norm       (batch, 1,      1,      1,              output_channels)
+            filter_f = filter_f/tf.cast(norm[:, np.newaxis, np.newaxis, np.newaxis, :], inputs.dtype)
+            # print('norm', norm.shape)
+            # print('filter_demod', filter_demod.shape)
+
+            ## Group convolutions
+            inputs = tf.reshape(inputs, [1, -1, height, width])
+            filter = tf.reshape(tf.transpose(filter_f, [1, 2, 3, 0, 4]), [filter_f.shape[1], filter_f.shape[2], filter_f.shape[3], -1])
+            # print('Reshaped Input:', inputs.shape)
+            # print('Filter_group Shape:', filter_group.shape)
+            output = tf.nn.conv2d(input=inputs, filter=tf.cast(filter, inputs.dtype), strides=strides, padding=padding, data_format='NCHW')
+            # print('After conv:', output.shape)
+            # Normalize output by output filter channels.
+            # print('Final conv:', output.shape)
+            output = tf.reshape(output, [-1, output_channels, height, width])
+            # print('Final conv:', output.shape)
+            output = tf.transpose(output, [0, 2, 3, 1])
+            # print('Final conv:', output.shape)
+        
+        output = tf.nn.bias_add(output, bias, data_format=data_format)
+
+    if display:
+        print('Conv Layer:     Scope=%15s Channels %5s Filter_size=%2s  Stride=%2s Padding=%6s Conv_type=%15s Output Shape: %s' % 
+            (str(scope)[:14], output_channels, filter_size, stride, padding, conv_type, output.shape))
+    return output
+
+
+def residual_block_mod(inputs, filter_size, stride, padding, scope, cond_label=None, is_training=True, normalization=None, noise_input_f=False, use_bias=True, spectral=False, activation=None, init='xavier', regularizer=None, power_iterations=1, display=True):
+    channels = inputs.shape.as_list()[-1]
+    with tf.variable_scope('resblock_%s' % scope):
+        with tf.variable_scope('part_1'):
+            # Convolutional
+            net = conv_mod(inputs, cond_label, channels, filter_size, stride, padding, 'convolutional', scope=1, spectral=spectral, init=init, regularizer=regularizer, power_iterations=power_iterations, display=False)
+            if noise_input_f:
+               net = noise_input(inputs=net, scope=1)
+            # Activation
+            if activation is not None: net = activation(net)
+            
+        with tf.variable_scope('part_2'):
+            # Convolutional
+            net = conv_mod(net, cond_label, channels, filter_size, stride, padding, 'convolutional', scope=1, spectral=spectral, init=init, regularizer=regularizer, power_iterations=power_iterations, display=False)
+            if noise_input_f:
+               net = noise_input(inputs=net, scope=2)
+            # Activation
+            if activation is not None: net = activation(net)
+
+        output = inputs + net
+
+        if display:
+            print('ResN Layer:     Scope=%15s Channels %5s Filter_size=%2s  Stride=%2s Padding=%6s Conv_type=%15s Output Shape: %s' % 
+            (str(scope)[:14], channels, filter_size, stride, padding, 'convolutional', output.shape))
+        return output
+
+
+ 

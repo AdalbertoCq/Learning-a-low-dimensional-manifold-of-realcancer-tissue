@@ -13,6 +13,7 @@ from models.generative.evaluation import *
 from models.generative.optimizer import *
 from models.generative.discriminator import *
 from models.generative.generator import *
+from models.generative.encoder import *
 from models.generative.gans.GAN import GAN
 
 
@@ -34,6 +35,8 @@ class PathologyGAN_Encoder(GAN):
 				learning_rate_g,             			# Learning rate generator.
 				learning_rate_d,             			# Learning rate discriminator.
 				learning_rate_e,             			# Learning rate encoder.
+				spectral=True,							# Spectral Normalization for weights.
+				noise_input_f=True,						# Input noise at each generator layer.
 				style_mixing=.5,						# Mixing probability threshold.
 				layers=5,					 			# Number for layers for Generator/Discriminator.
 				synth_layers=4, 			 			# Number for layers for Generator/Discriminator.
@@ -53,6 +56,8 @@ class PathologyGAN_Encoder(GAN):
 		self.layers = layers
 		self.synth_layers = synth_layers
 		self.normalization = conditional_instance_norm
+		self.spectral = spectral
+		self.noise_input_f = noise_input_f
 
 		# Training parameters
 		self.style_mixing = style_mixing
@@ -85,62 +90,73 @@ class PathologyGAN_Encoder(GAN):
 		learning_rate_d = tf.placeholder(dtype=tf.float32, name='learning_rate_d')
 		learning_rate_e = tf.placeholder(dtype=tf.float32, name='learning_rate_e')
 
-		# Epsilon for distance disturbance on W latent for encoder regularization.
-		# learning_rate_e = tf.placeholder(dtype=tf.float32, name='learning_rate_e')
-
 		# Probability rate of using style mixing regularization.
 		style_mixing_prob = tf.placeholder(dtype=tf.float32, name='style_mixing_prob')
 
 		return real_images_1, real_images_2, z_input_1, z_input_2, w_latent_in, w_latent_ref, learning_rate_g, learning_rate_d, learning_rate_e, style_mixing_prob
 
-	# Decoder Network.
+	# Encoder Network.
 	def encoder(self, images, reuse, is_train, init):
-		w_latent = encoder_resnet_incr(images=images, z_dim=self.z_dim, layers=self.layers, spectral=True, activation=leakyReLU, reuse=reuse, init=init, 
-									   regularizer=orthogonal_reg(self.regularizer_scale), normalization=None, attention=self.attention)
+		w_latent = encoder_resnet_incr(images=images, z_dim=self.z_dim, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, init=init, 
+									   # is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=None, attention=self.attention)
+									   is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=batch_norm, attention=self.attention)
+		# w_latent = encoder_resnet_alae(images=images, latent_dim=self.z_dim, layers=self.layers, spectral=self.spectral, 
+		# 							   activation=leakyReLU, reuse=reuse, is_train=is_train, init=init, regularizer=orthogonal_reg(self.regularizer_scale), 
+		# 							   normalization=instance_norm, attention=self.attention, name='encoder')						
+
 		return w_latent
 
 	# Mapping Network.
 	def mapping(self, z_input, reuse, is_train, normalization, init):
-		w_latent = mapping_resnet(z_input=z_input, z_dim=self.z_dim, layers=self.synth_layers, reuse=reuse, is_train=is_train, spectral=True, activation=ReLU, 
+		w_latent = mapping_resnet(z_input=z_input, z_dim=self.z_dim, layers=self.synth_layers, reuse=reuse, is_train=is_train, spectral=self.spectral, activation=ReLU, 
 								  normalization=normalization, init=init, regularizer=orthogonal_reg(self.regularizer_scale))
 		return w_latent
 
 	# Generator nerwork.
 	def generator(self, w_latent, reuse, is_train, init):
-		output = generator_resnet_style(z_input=w_latent, image_channels=self.image_channels, layers=self.layers, spectral=True, activation=leakyReLU, reuse=reuse, is_train=is_train,
-										normalization=self.normalization, init=init, noise_input_f=True, regularizer=orthogonal_reg(self.regularizer_scale), attention=self.attention)
+		output = generator_resnet_style(w_input=w_latent, image_channels=self.image_channels, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, 
+										is_train=is_train, normalization=self.normalization, init=init, noise_input_f=self.noise_input_f, attention=self.attention,
+										regularizer=orthogonal_reg(self.regularizer_scale))
 		return output
 
 	# Discriminator Network.
 	def discriminator(self, images, reuse, init, name, label_input=None):
-		output, logits = discriminator_resnet_incr(images=images, layers=self.layers, spectral=True, activation=leakyReLU, reuse=reuse, attention=self.attention, init=init, 
-											  regularizer=orthogonal_reg(self.regularizer_scale), label=label_input, label_t=self.label_t, name=name)
+		output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, 
+												   init=init, regularizer=orthogonal_reg(self.regularizer_scale), label=label_input, label_t=self.label_t, name=name)
 		return output, logits
 
 	# Loss function.
 	def loss(self):
-		loss_dis, loss_gen = losses(self.loss_type, self.output_fake, self.output_real, self.logits_fake, self.logits_real, real_images=self.real_images_1, fake_images=self.fake_images, 
-									discriminator=self.discriminator, gp_coeff=self.gp_coeff, init=self.init, dis_name='discriminator_gen')
+		loss_dis, loss_gen = losses(self.loss_type, self.output_fake, self.output_real, self.logits_fake, self.logits_real, real_images=self.real_images_1, 
+									fake_images=self.fake_images, discriminator=self.discriminator, gp_coeff=self.gp_coeff, init=self.init, dis_name='discriminator_gen')
+
+		# # MSE on Original image and Reconstruction
+		# dimensionality_latent = np.product(self.fake_images_e.shape.as_list()[1:])
+		# img_recon_error = tf.reduce_sum(tf.square(self.real_images_2-self.fake_images_e), axis=[1,2,3])
+		# self.loss_img_latent = tf.reduce_mean(img_recon_error, axis=[-1])/float(dimensionality_latent)
 
 		# MSE on Reference W latent and reconstruction, normalized by the dimensionality of the z vector.
 		dimensionality_latent = self.z_dim
 		latent_recon_error = tf.reduce_mean(tf.square(self.w_latent_ref-self.w_latent_e_1), axis=[-1])
 		latent_recon_error = tf.reduce_sum(latent_recon_error, axis=[-1])
-		loss_enc_latent = tf.reduce_mean(latent_recon_error)/float(dimensionality_latent)
+		self.loss_enc_latent = tf.reduce_mean(latent_recon_error)/float(dimensionality_latent)
 
 		# Euclidean distance between W and W + epsilon perturbation.
-		diff_w_latents = self.w_reg_p - self.w_reg_noise_p
-		distance = tf.linalg.norm(diff_w_latents, axis=-1)
-		mse_noise = tf.reduce_mean(tf.square(distance-self.epsilon_tf))
+		# diff_w_latents = self.w_reg_p - self.w_reg_noise_p
+		# distance = tf.linalg.norm(diff_w_latents, axis=-1)
+		# mse_noise = tf.reduce_mean(tf.square(distance-self.epsilon_tf))
 
-		loss_enc = loss_enc_latent
+		# Normalized losses by dimensionality of the MSE, dim_z = 200 or dim_img = 224*224*3
+		loss_enc = self.loss_enc_latent 
 
-		return loss_dis, loss_gen, loss_enc, mse_noise
+		# return loss_dis, loss_gen, loss_enc, mse_noise
+		return loss_dis, loss_gen, loss_enc
 
 	# Optimizer.
 	def optimization(self):
-		train_discriminator, train_generator, _ = optimizer(self.beta_1, self.loss_gen, self.loss_dis, self.loss_type, self.learning_rate_input_d, self.learning_rate_input_g, None, 
-															beta_2=self.beta_2, gen_name='generator', dis_name='discriminator_gen', mapping_name='mapping_', encoder_name='encoder')
+		train_discriminator, train_generator, _ = optimizer(self.beta_1, self.loss_gen, self.loss_dis, self.loss_type, self.learning_rate_input_d, 
+															self.learning_rate_input_g, None, beta_2=self.beta_2, gen_name='generator', dis_name='discriminator_gen', 
+															mapping_name='mapping_', encoder_name='encoder')
 		
 		with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
 			# Quick dirty optimizer for Encoder.
@@ -180,8 +196,7 @@ class PathologyGAN_Encoder(GAN):
 		noise_n = noise_s/tf.linalg.norm(noise_s)
 
 		w_reg = self.mapping(self.z_input_1, reuse=True, is_train=True, normalization=None, init=self.init)
-		# w_reg_noise = self.mapping(self.z_input_1+(self.epsilon_tf*noise_n), reuse=True, is_train=True, normalization=None, init=self.init)
-
+		
 		w_reg_noise = w_reg + (self.epsilon_tf*noise_n)
 
 		w_reg_1 = tf.tile(w_reg[:,:, np.newaxis], [1, 1, self.layers+1])
@@ -226,11 +241,12 @@ class PathologyGAN_Encoder(GAN):
 			self.w_latent_e_out = self.encoder(images=self.real_images_2, reuse=True, is_train=False, init=self.init)
 
 			# Regularize encoder, 
-			self.epsilon = 5e-2
-			self.w_reg, self.w_reg_noise, self.w_reg_p, self.w_reg_noise_p = self.w_path_length_reg()
+			# self.epsilon = 5e-2
+			# self.w_reg, self.w_reg_noise, self.w_reg_p, self.w_reg_noise_p = self.w_path_length_reg()
 
 			# Losses.
-			self.loss_dis, self.loss_gen, self.loss_enc, self.mse_noise = self.loss()
+			# self.loss_dis, self.loss_gen, self.loss_enc, self.mse_noise = self.loss()
+			self.loss_dis, self.loss_gen, self.loss_enc = self.loss()
 
 
 			# Optimizers.
@@ -244,8 +260,8 @@ class PathologyGAN_Encoder(GAN):
 
 		# Setups.
 		img_storage, latent_storage, checkpoints, csvs = setup_output(show_epochs, epochs, data, n_images, self.z_dim, data_out_path, self.model_name, restore, save_img)
-		# losses = ['Generator Loss', 'Discriminator Loss', 'Encoder Loss', 'Encoder Img Loss']
-		losses = ['Generator Loss', 'Discriminator Loss', 'Encoder Loss', 'Encoder W Euclidean']
+		# losses = ['Generator Loss', 'Discriminator Loss', 'Encoder Loss', 'Encoder W Euclidean']
+		losses = ['Generator Loss', 'Discriminator Loss', 'Encoder Loss']
 		setup_csvs(csvs=csvs, model=self, losses=losses)
 		report_parameters(self, epochs, restore, data_out_path)
 
@@ -309,9 +325,9 @@ class PathologyGAN_Encoder(GAN):
 					####################################################################################################
 					# Print losses and Generate samples.
 					if run_epochs % print_epochs == 0 and flag_style_mixing:
-						# epoch_loss_dis, epoch_loss_gen, epoch_loss_enc, epoch_loss_enc_img, noise_print = session.run([self.loss_dis, self.loss_gen, self.loss_enc, self.loss_enc_img, self.noise_print], feed_dict=feed_dict)
-						epoch_loss_dis, epoch_loss_gen, epoch_loss_enc, epoch_mse_noise = session.run([self.loss_dis, self.loss_gen, self.loss_enc, self.mse_noise], feed_dict=feed_dict)
-						update_csv(model=self, file=csvs[0], variables=[epoch_loss_gen, epoch_loss_dis, epoch_loss_enc, epoch_mse_noise], epoch=epoch, iteration=run_epochs, losses=losses)
+						model_outputs = [self.loss_gen, self.loss_dis, self.loss_enc]
+						epoch_outputs = session.run(model_outputs, feed_dict=feed_dict)
+						update_csv(model=self, file=csvs[0], variables=epoch_outputs, epoch=epoch, iteration=run_epochs, losses=losses)
 					run_epochs += 1
 					# break
 				data.training.reset()
