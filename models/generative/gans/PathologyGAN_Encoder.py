@@ -98,12 +98,8 @@ class PathologyGAN_Encoder(GAN):
 	# Encoder Network.
 	def encoder(self, images, reuse, is_train, init):
 		w_latent = encoder_resnet_incr(images=images, z_dim=self.z_dim, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, init=init, 
-									   # is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=None, attention=self.attention)
-									   is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=batch_norm, attention=self.attention)
-		# w_latent = encoder_resnet_alae(images=images, latent_dim=self.z_dim, layers=self.layers, spectral=self.spectral, 
-		# 							   activation=leakyReLU, reuse=reuse, is_train=is_train, init=init, regularizer=orthogonal_reg(self.regularizer_scale), 
-		# 							   normalization=instance_norm, attention=self.attention, name='encoder')						
-
+									   is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=None, attention=self.attention)
+# 									   is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=batch_norm, attention=self.attention)
 		return w_latent
 
 	# Mapping Network.
