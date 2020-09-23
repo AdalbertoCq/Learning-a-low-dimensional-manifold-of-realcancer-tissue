@@ -42,15 +42,6 @@ image_width = img_size
 image_height = img_size
 image_channels = 3
 
-if img_size == 150:
-	from models.generative.gans.PathologyGAN_Encoder_150 import PathologyGAN_Encoder
-	from models.evaluation.features import *
-elif img_size == 28:
-	from models.generative.gans.C_PathologyGAN_Encoder_norm import PathologyGAN_Encoder
-	from models.evaluation.features_nuance import *
-else:
-	
-
 # Hyperparameters.
 learning_rate_g = 1e-4
 learning_rate_d = 1e-4
