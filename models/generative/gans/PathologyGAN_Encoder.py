@@ -97,9 +97,11 @@ class PathologyGAN_Encoder(GAN):
 
 	# Encoder Network.
 	def encoder(self, images, reuse, is_train, init):
-		w_latent = encoder_resnet_incr(images=images, z_dim=self.z_dim, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, init=init, 
-									   is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=None, attention=self.attention)
-# 									   is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=batch_norm, attention=self.attention)
+		# w_latent = encoder_resnet_incr(images=images, z_dim=self.z_dim, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, init=init, 
+									   # is_train=is_train, regularizer=orthogonal_reg(self.regularizer_scale), normalization=None, attention=self.attention)
+		w_latent = encoder_resnet_instnorm(images=images, latent_dim=self.z_dim, layers=self.layers, spectral=self.spectral, 
+									   activation=leakyReLU, reuse=reuse, is_train=is_train, init=init, regularizer=orthogonal_reg(self.regularizer_scale), 
+									   normalization=instance_norm, attention=self.attention, name='encoder')						
 		return w_latent
 
 	# Mapping Network.
@@ -117,8 +119,9 @@ class PathologyGAN_Encoder(GAN):
 
 	# Discriminator Network.
 	def discriminator(self, images, reuse, init, name, label_input=None):
-		output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, 
-												   init=init, regularizer=orthogonal_reg(self.regularizer_scale), label=label_input, label_t=self.label_t, name=name)
+		output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, normalization=instance_norm, 
+		# output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, normalization=None, 
+											  init=init, regularizer=orthogonal_reg(self.regularizer_scale), label=label_input, label_t=self.label_t, name=name)
 		return output, logits
 
 	# Loss function.
@@ -126,26 +129,12 @@ class PathologyGAN_Encoder(GAN):
 		loss_dis, loss_gen = losses(self.loss_type, self.output_fake, self.output_real, self.logits_fake, self.logits_real, real_images=self.real_images_1, 
 									fake_images=self.fake_images, discriminator=self.discriminator, gp_coeff=self.gp_coeff, init=self.init, dis_name='discriminator_gen')
 
-		# # MSE on Original image and Reconstruction
-		# dimensionality_latent = np.product(self.fake_images_e.shape.as_list()[1:])
-		# img_recon_error = tf.reduce_sum(tf.square(self.real_images_2-self.fake_images_e), axis=[1,2,3])
-		# self.loss_img_latent = tf.reduce_mean(img_recon_error, axis=[-1])/float(dimensionality_latent)
-
 		# MSE on Reference W latent and reconstruction, normalized by the dimensionality of the z vector.
 		dimensionality_latent = self.z_dim
 		latent_recon_error = tf.reduce_mean(tf.square(self.w_latent_ref-self.w_latent_e_1), axis=[-1])
 		latent_recon_error = tf.reduce_sum(latent_recon_error, axis=[-1])
-		self.loss_enc_latent = tf.reduce_mean(latent_recon_error)/float(dimensionality_latent)
+		loss_enc = tf.reduce_mean(latent_recon_error)/float(dimensionality_latent)
 
-		# Euclidean distance between W and W + epsilon perturbation.
-		# diff_w_latents = self.w_reg_p - self.w_reg_noise_p
-		# distance = tf.linalg.norm(diff_w_latents, axis=-1)
-		# mse_noise = tf.reduce_mean(tf.square(distance-self.epsilon_tf))
-
-		# Normalized losses by dimensionality of the MSE, dim_z = 200 or dim_img = 224*224*3
-		loss_enc = self.loss_enc_latent 
-
-		# return loss_dis, loss_gen, loss_enc, mse_noise
 		return loss_dis, loss_gen, loss_enc
 
 	# Optimizer.
@@ -173,39 +162,6 @@ class PathologyGAN_Encoder(GAN):
 		w_latent = tf.where(tf.broadcast_to(possible_layers<layer_cut, tf.shape(w_latent_1)), w_latent_1, w_latent_2)
 		return w_latent
 
-	def style_mixing_reg2(self, w_input_1, w_input_2, style_mixing_prob, layers):
-		w_latent_1 = tf.tile(w_input_1[:,:, np.newaxis], [1, 1, layers+1])
-		w_latent_2 = tf.tile(w_input_2[:,:, np.newaxis], [1, 1, layers+1])    
-		with tf.variable_scope('style_mixing_reg'):			
-			layers_index = 1 + layers
-			stages = np.linspace(0.0, 1.0, layers_index)
-			w_interpolation = w_latent_1*stages +w_latent_2*(1-stages) 
-			w_latent = tf.cond(tf.random_uniform([], 0.0, 1.0)<style_mixing_prob, lambda:w_latent_1, lambda:w_interpolation)
-		return w_latent
-
-	# W latent regularization for Encoder, small changes in image -> small changes in w. 
-	def w_path_length_reg(self):
-
-		self.epsilon_tf = tf.constant(self.epsilon)
-
-		noise_s = tf.random_uniform(shape=(1, self.z_dim), minval=0, maxval=1.)
-		noise_n = noise_s/tf.linalg.norm(noise_s)
-
-		w_reg = self.mapping(self.z_input_1, reuse=True, is_train=True, normalization=None, init=self.init)
-		
-		w_reg_noise = w_reg + (self.epsilon_tf*noise_n)
-
-		w_reg_1 = tf.tile(w_reg[:,:, np.newaxis], [1, 1, self.layers+1])
-		w_reg_noise_1 = tf.tile(w_reg_noise[:,:, np.newaxis], [1, 1, self.layers+1])
-
-		fake_reg = self.generator(w_reg_1, reuse=True, is_train=True, init=self.init)
-		fake_reg_noise = self.generator(w_reg_noise_1, reuse=True, is_train=True, init=self.init)
-
-		w_reg_p = self.encoder(images=fake_reg, reuse=True, is_train=True, init=self.init)
-		w_reg_noise_p = self.encoder(images=fake_reg_noise, reuse=True, is_train=True, init=self.init)
-
-		return w_reg, w_reg_noise, w_reg_p, w_reg_noise_p
-
 	# Put together the GAN.
 	def build_model(self):
 
@@ -228,20 +184,13 @@ class PathologyGAN_Encoder(GAN):
 			# Decoder Network.														
 			self.w_latent_e = self.encoder(images=self.real_images_2, reuse=False, is_train=True, init=self.init)
 			self.w_latent_e_1 = tf.tile(self.w_latent_e[:,:, np.newaxis], [1, 1, self.layers+1])
-			# Generator.
-			# self.fake_images_e = self.generator(self.w_latent_e_1, reuse=True, is_train=True, init=self.init)
 			
 			# Model for inference.
 			self.w_latent_out = self.mapping(self.z_input_1, reuse=True, is_train=False, normalization=None, init=self.init)
 			self.output_gen = self.generator(self.w_latent_in, reuse=True, is_train=False, init=self.init)
 			self.w_latent_e_out = self.encoder(images=self.real_images_2, reuse=True, is_train=False, init=self.init)
 
-			# Regularize encoder, 
-			# self.epsilon = 5e-2
-			# self.w_reg, self.w_reg_noise, self.w_reg_p, self.w_reg_noise_p = self.w_path_length_reg()
-
 			# Losses.
-			# self.loss_dis, self.loss_gen, self.loss_enc, self.mse_noise = self.loss()
 			self.loss_dis, self.loss_gen, self.loss_enc = self.loss()
 
 
@@ -264,6 +213,7 @@ class PathologyGAN_Encoder(GAN):
 		# Training session.
 		config = tf.ConfigProto()
 		config.gpu_options.allow_growth = True
+		run_options = tf.RunOptions(report_tensor_allocations_upon_oom=True)
 		with tf.Session(config=config) as session:
 			session.run(tf.global_variables_initializer())
 
@@ -286,8 +236,6 @@ class PathologyGAN_Encoder(GAN):
 			# Epoch Iteration.
 			for epoch in range(1, epochs+1):
 
-				saver.save(sess=session, save_path=checkpoints)
-				
 				# Batch Iteration.
 				for batch_images, batch_labels in data.training:
 					# Inputs.
@@ -299,7 +247,7 @@ class PathologyGAN_Encoder(GAN):
 					feed_dict = {self.z_input_1:z_batch_1, self.z_input_2:z_batch_2, self.w_latent_in:w_latent_in, self.real_images_1:batch_images, self.real_images_2:batch_images, self.style_mixing_prob:self.style_mixing, self.learning_rate_input_g: self.learning_rate_g, self.learning_rate_input_d: self.learning_rate_d, self.learning_rate_input_e: self.learning_rate_e}
 					
 					# Update discriminator for generator.
-					_, gen_img, w_latent_e_1  = session.run([self.train_discriminator, self.fake_images, self.w_latent], feed_dict=feed_dict)
+					_, gen_img, w_latent_e_1  = session.run([self.train_discriminator, self.fake_images, self.w_latent], feed_dict=feed_dict, options=run_options)
 
 					# Update generator after n_critic updates from discriminator.
 					if run_epochs%self.n_critic == 0:
@@ -316,16 +264,17 @@ class PathologyGAN_Encoder(GAN):
 
 					if flag_style_mixing:
 						feed_dict = {self.real_images_2:gen_img, self.w_latent_ref:w_latent_e_1, self.z_input_1:z_batch_1, self.z_input_2:z_batch_2, self.w_latent_in:w_latent_in, self.real_images_1:batch_images, self.learning_rate_input_e: self.learning_rate_e, self.style_mixing_prob:self.style_mixing, self.learning_rate_input_g: self.learning_rate_g, self.learning_rate_input_d: self.learning_rate_d}
-						session.run([self.train_encoder], feed_dict=feed_dict)
+						session.run([self.train_encoder], feed_dict=feed_dict, options=run_options)
 
 					####################################################################################################
 					# Print losses and Generate samples.
 					if run_epochs % print_epochs == 0 and flag_style_mixing:
 						model_outputs = [self.loss_gen, self.loss_dis, self.loss_enc]
-						epoch_outputs = session.run(model_outputs, feed_dict=feed_dict)
+						epoch_outputs = session.run(model_outputs, feed_dict=feed_dict, options=run_options)
 						update_csv(model=self, file=csvs[0], variables=epoch_outputs, epoch=epoch, iteration=run_epochs, losses=losses)
 					run_epochs += 1
 					# break
+				saver.save(sess=session, save_path=checkpoints)
 				data.training.reset()
 
 				# After each epoch dump a sample of generated images.

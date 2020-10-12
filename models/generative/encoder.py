@@ -34,7 +34,8 @@ def encoder_resnet(images, z_dim, layers, spectral, activation, reuse, init='xav
 		# Flatten.
 		net = tf.layers.flatten(inputs=net)
 
-		# Dense.		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=1)				
+		# Dense.		
+		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=1)				
 		if normalization is not None: net = normalization(inputs=net, training=True)
 		net = activation(net)
 
@@ -125,7 +126,7 @@ def encoder_resnet_incr(images, z_dim, layers, spectral, activation, reuse, is_t
 	return w_latent
 
 
-def encoder_resnet_alae(images, latent_dim, layers, spectral, activation, reuse, is_train, init='xavier', regularizer=None, normalization=instance_norm, attention=None, down='downscale', name='encoder'):
+def encoder_resnet_instnorm(images, latent_dim, layers, spectral, activation, reuse, is_train, init='xavier', regularizer=None, normalization=instance_norm, attention=None, down='downscale', name='encoder'):
 	net = images
 	channels = [32, 64, 128, 256, 512, 1024]
 	if display:
