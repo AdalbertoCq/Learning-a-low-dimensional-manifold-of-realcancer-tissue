@@ -34,7 +34,7 @@ class PathologyGAN_Encoder(GAN):
 				beta_1,                      			# Beta 1 value for Adam Optimizer.
 				learning_rate_g,             			# Learning rate generator.
 				learning_rate_d,             			# Learning rate discriminator.
-				learning_rate_e,             			# Learning rate encoder.
+				learning_rate_e=None,             		# Learning rate encoder.
 				spectral=True,							# Spectral Normalization for weights.
 				noise_input_f=True,						# Input noise at each generator layer.
 				style_mixing=.5,						# Mixing probability threshold.
@@ -65,7 +65,10 @@ class PathologyGAN_Encoder(GAN):
 		self.gp_coeff = gp_coeff
 		self.beta_2 = beta_2
 		self.regularizer_scale = regularizer_scale
-		self.learning_rate_e = learning_rate_e
+		if learning_rate_e is None:
+			self.learning_rate_e = learning_rate_d
+		else:
+			self.learning_rate_e = learning_rate_e
 		
 		super().__init__(data=data, z_dim=z_dim, use_bn=use_bn, alpha=alpha, beta_1=beta_1, learning_rate_g=learning_rate_g, learning_rate_d=learning_rate_d, 
 						 conditional=False, n_critic=n_critic, init=init, loss_type=loss_type, model_name=model_name)
@@ -235,6 +238,8 @@ class PathologyGAN_Encoder(GAN):
 
 			# Epoch Iteration.
 			for epoch in range(1, epochs+1):
+
+				saver.save(sess=session, save_path=checkpoints)
 
 				# Batch Iteration.
 				for batch_images, batch_labels in data.training:
