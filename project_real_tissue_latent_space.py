@@ -2,6 +2,8 @@ import tensorflow as tf
 import os 
 import argparse
 from data_manipulation.data import Data
+from models.generative.gans.PathologyGAN_Encoder import PathologyGAN_Encoder
+from models.evaluation.features import *
 os.umask(0o002)
 
 
@@ -40,16 +42,6 @@ image_width = img_size
 image_height = img_size
 image_channels = 3
 
-if img_size == 150:
-	from models.generative.gans.PathologyGAN_Encoder_150 import PathologyGAN_Encoder
-	from models.evaluation.features import *
-elif img_size == 28:
-	from models.generative.gans.C_PathologyGAN_Encoder_norm import PathologyGAN_Encoder
-	from models.evaluation.features_nuance import *
-else:
-	from models.generative.gans.PathologyGAN_Encoder import PathologyGAN_Encoder
-	from models.evaluation.features import *
-
 # Hyperparameters.
 learning_rate_g = 1e-4
 learning_rate_d = 1e-4
@@ -82,7 +74,3 @@ with tf.Graph().as_default():
 
     # Take real tissue samples to encode into latent space.
     real_hdf5_path, num_samples = real_encode_from_checkpoint(model=pathgan, data=data, data_out_path=main_path, checkpoint=checkpoint, real_hdf5=real_hdf5, batches=batch_size, save_img=False)
-
-# Generate Inception features from real images.
-with tf.Graph().as_default():
-	hdf5s_features = inception_tf_feature_activations(hdf5s=[real_hdf5_path], input_shape=[data.patch_h, data.patch_w, data.n_channels], batch_size=batch_size)
