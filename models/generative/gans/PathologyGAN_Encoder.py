@@ -122,8 +122,8 @@ class PathologyGAN_Encoder(GAN):
 
 	# Discriminator Network.
 	def discriminator(self, images, reuse, init, name, label_input=None):
-		output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, normalization=instance_norm, 
-		# output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, normalization=None, 
+		# output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, normalization=instance_norm, 
+		output, logits = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, normalization=None, 
 											  init=init, regularizer=orthogonal_reg(self.regularizer_scale), label=label_input, label_t=self.label_t, name=name)
 		return output, logits
 
