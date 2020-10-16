@@ -165,7 +165,7 @@ def generate_samples_epoch(session, model, data_shape, epoch, evaluation_path, n
 				ind += 1
 
 # Generate sampeles from PathologyGAN, no encoder.
-def generate_samples_from_checkpoint(model, data, data_out_path, checkpoint, num_samples=5000, batches=50):
+def generate_samples_from_checkpoint(model, data, data_out_path, checkpoint, num_samples=5000, batches=50, save_img=False):
 	path = os.path.join(data_out_path, 'evaluation')
 	path = os.path.join(path, model.model_name)
 	path = os.path.join(path, data.dataset)
@@ -234,7 +234,12 @@ def generate_samples_from_checkpoint(model, data, data_out_path, checkpoint, num
 					z_storage[ind] = z_latent_batch[i, :]
 					if 'PathologyGAN' in model.model_name:
 						w_storage[ind] = w_latent_batch[i, :]
-					plt.imsave('%s/gen_%s.png' % (img_path, ind), gen_img_batch[i, :, :, :])
+					if save_img:
+						if gen_img_batch.shape[-1] == 1:
+							plt.imshow(gen_img_batch[i, :, :, 0], cmap='gray')
+							plt.savefig('%s/gen_%s.png' % (img_path, ind))
+						else:
+							plt.imsave('%s/gen_%s.png' % (img_path, ind), gen_img_batch[i, :, :, :])
 					ind += 1
 		print(ind, 'Generated Images')
 	else:
@@ -252,7 +257,7 @@ def generate_samples_from_checkpoint_conditional(model, data, data_out_path, che
 	path = os.path.join(path, model.model_name)
 	path = os.path.join(path, data.dataset)
 	path = os.path.join(path, data.marker)
-	res = 'h%s_w%s_n%s_zdim%s' % (data.patch_h, data.patch_w, data.n_channels, model.z_dim)
+	res = 'h%s_w%s_n%s_zdim%s_emb%s_nclust%s' % (data.patch_h, data.patch_w, data.n_channels, model.z_dim, model.embedding_size, k)
 	path = os.path.join(path, res)
 	img_path = os.path.join(path, 'generated_images')
 	if not os.path.isdir(path):
@@ -280,12 +285,14 @@ def generate_samples_from_checkpoint_conditional(model, data, data_out_path, che
 		# H5 File specifications and creation.
 		img_shape = [num_samples] + data.test.shape[1:]
 		latent_shape = [num_samples] + [model.z_dim]
-		w_shape = [num_samples] + [model.z_dim*2]
+		lemb_shape = [num_samples] + [model.embedding_size]
+		w_shape = [num_samples] + [model.z_dim + model.embedding_size]
 		hdf5_file = h5py.File(hdf5_path, mode='w')
+
 		img_storage = hdf5_file.create_dataset(name='images', shape=img_shape, dtype=np.float32)
 		z_storage = hdf5_file.create_dataset(name='z_latent', shape=latent_shape, dtype=np.float32)
 		label_storage = hdf5_file.create_dataset(name='labels', shape=latent_shape, dtype=np.float32)
-		lemb_storage = hdf5_file.create_dataset(name='label_emb', shape=latent_shape, dtype=np.float32)
+		lemb_storage = hdf5_file.create_dataset(name='label_emb', shape=lemb_shape, dtype=np.float32)
 		w_storage = hdf5_file.create_dataset(name='w_latent', shape=w_shape, dtype=np.float32)
 		print('Generated Images path:', img_path)
 		print('H5 File path:', hdf5_path)
@@ -304,8 +311,10 @@ def generate_samples_from_checkpoint_conditional(model, data, data_out_path, che
 				z_latent_batch = np.random.normal(size=(batches, model.z_dim))
 				z_label_batch_int = np.random.randint(k, size=(batches,1))
 				z_label_batch = one_hot_encoder.transform(z_label_batch_int)
-				feed_dict = {model.z_input_1: z_latent_batch, model.z_labels: z_label_batch}
-				w_latent_batch, l_embedding_batch = session.run([model.w_latent_out, model.label_emb_gen], feed_dict=feed_dict)
+				feed_dict = {model.z_input_1: z_latent_batch, model.z_labels_1: z_label_batch}
+				w_latent_batch, l_embedding_batch = session.run([model.w_latent_out, model.label_emb_gen_1], feed_dict=feed_dict)
+				# feed_dict = {model.z_input_1: z_latent_batch, model.z_labels: z_label_batch}
+				# w_latent_batch, l_embedding_batch = session.run([model.w_latent_out, model.label_emb_gen], feed_dict=feed_dict)
 				w_latent_in = np.tile(w_latent_batch[:,:, np.newaxis], [1, 1, model.layers+1])
 				
 				feed_dict = {model.w_latent_in:w_latent_in, model.real_images:batch_images}

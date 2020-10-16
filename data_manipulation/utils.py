@@ -97,7 +97,7 @@ def get_augmented_patch(path, img_filename, config, patch_h, patch_w, norm=True)
     return flipped / 255.0 if norm else flipped
 
 
-def get_and_save_patch(augmentations, sets, hdf5_path, dataset_path, train_path, patch_h, patch_w, n_channels, type_db, save):
+def get_and_save_patch(augmentations, sets, hdf5_path, dataset_path, train_path, patch_h, patch_w, n_channels, save):
     total = len(augmentations)
     hdf5_file = h5py.File(hdf5_path, mode='w')
     img_db_shape = (total, patch_h, patch_w, n_channels)
@@ -107,8 +107,8 @@ def get_and_save_patch(augmentations, sets, hdf5_path, dataset_path, train_path,
     else:
         len_label = len(label_sample)
     labels_db_shape = (total, len_label)
-    img_storage = hdf5_file.create_dataset(name='%s_img' % type_db, shape=img_db_shape, dtype=np.uint8)
-    label_storage = hdf5_file.create_dataset(name='%s_labels' % type_db, shape=labels_db_shape, dtype=np.float32)
+    img_storage = hdf5_file.create_dataset(name='images', shape=img_db_shape, dtype=np.uint8)
+    label_storage = hdf5_file.create_dataset(name='labels', shape=labels_db_shape, dtype=np.float32)
 
     print('\nTotal images: ', total)
     index_patches = 0
@@ -204,6 +204,8 @@ def write_sprite_image(data, filename=None, metadata=True, row_n=None):
     data = data.reshape((n * data.shape[1], n * data.shape[3]) + data.shape[4:])
     data = (data * 255).astype(np.uint8)
     
+    if data.shape[-1] == 1:
+        data = data[:, :, 0]
     if filename is not None:
         plt.imsave(filename, data)
 
@@ -211,5 +213,12 @@ def write_sprite_image(data, filename=None, metadata=True, row_n=None):
 
 def read_hdf5(path, dic):
     hdf5_file = h5py.File(path, 'r')
-    return hdf5_file[dic]
+    image_name = dic
+    if 'images' == dic and dic not in hdf5_file:
+        naming = list(hdf5_file.keys())
+        if '_' in naming[0]:
+            image_name = '%s_img' % naming[0].split('_')[0]
+    if dic not in hdf5_file:
+        return None
+    return hdf5_file[image_name]
 
