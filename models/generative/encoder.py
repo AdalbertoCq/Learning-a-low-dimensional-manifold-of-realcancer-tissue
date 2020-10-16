@@ -155,9 +155,7 @@ def encoder_resnet_instnorm(images, latent_dim, layers, spectral, activation, re
 
 			# Attention layer. 
 			if attention is not None and net.shape.as_list()[1]==attention: 
-				# Trials A. Test for better image quality (56x56): 
-				net = attention_block_2(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
-				# net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
 			
 			# Down.
 			layer_channel = layer+1
