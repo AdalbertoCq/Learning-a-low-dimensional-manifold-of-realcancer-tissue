@@ -57,9 +57,7 @@ layers_map = {448:6, 224:5, 112:4, 56:3, 28:2}
 layers = layers_map[image_height]
 noise_input_f = True
 spectral = True
-# Trials A. Test for better image quality (56x56): 
-attention = 56
-# attention = 28
+attention = 28
 alpha = 0.2
 n_critic = 5
 gp_coeff = .65

@@ -45,9 +45,7 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 								 spectral=spectral, init=init, regularizer=regularizer, activation=activation)
 			# Attention layer. 
 			if attention is not None and net.shape.as_list()[1]==attention:
-				# Trials A. Test for better image quality (56x56): 
-				net = attention_block_2(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
-				# net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
 			
 			# Down.
 			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
