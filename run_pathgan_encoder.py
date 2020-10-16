@@ -13,6 +13,7 @@ parser.add_argument('--marker', dest='marker', type=str, default='he', help='Mar
 parser.add_argument('--img_size', dest='img_size', type=int, default=224, help='Image size for the model.')
 parser.add_argument('--model', dest='model', type=str, default='PathologyGAN_Encoder', help='Model name.')
 parser.add_argument('--dbs_path', dest='dbs_path', type=str, default=None, help='Directory with DBs to use.')
+parser.add_argument('--restore', dest='restore', action='store_true', default=False, help='Restore previous run and continue.')
 args = parser.parse_args()
 epochs = args.epochs
 batch_size = args.batch_size
@@ -22,11 +23,10 @@ marker = args.marker
 z_dim = args.z_dim
 model = args.model
 dbs_path = args.dbs_path
+restore = args.restore
 
 if img_size == 150:
 	from models.generative.gans.PathologyGAN_Encoder_150 import PathologyGAN_Encoder
-elif img_size == 28:
-	from models.generative.gans.PathologyGAN_Encoder import PathologyGAN_Encoder
 else:
 	from models.generative.gans.PathologyGAN_Encoder import PathologyGAN_Encoder
 
@@ -50,18 +50,20 @@ learning_rate_d = 1e-4
 learning_rate_e = 1e-4
 beta_1 = 0.5
 beta_2 = 0.9
-restore = False
 regularizer_scale = 1e-4
 
 # Model
-layers_map = {512:7, 448:6, 256:6, 224:5, 128:5, 150:5, 112:4, 64:4, 28:2}
+layers_map = {448:6, 224:5, 112:4, 56:3, 28:2}
 layers = layers_map[image_height]
 noise_input_f = True
 spectral = True
-attention = 28
+# Trials A. Test for better image quality (56x56): 
+attention = 56
+# attention = 28
 alpha = 0.2
 n_critic = 5
 gp_coeff = .65
+# gp_coeff = .1
 use_bn = False
 init = 'orthogonal'
 loss_type = 'relativistic gradient penalty'

@@ -6,11 +6,9 @@ from models.generative.normalization import *
 
 display = True
 
-def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', label=None, label_t='cat', infoGAN=False, c_dim=None, name='discriminator'):
+def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', label=None, label_t='cat', name='discriminator'):
 	net = images
 	channels = [32, 64, 128, 256, 512, 1024]
-	# For resolution 448
-	# channels = [16, 32, 64, 128, 256, 512, 1024]
 	if display:
 		print('DISCRIMINATOR INFORMATION:')
 		print('Channels: ', channels[:layers])
@@ -19,8 +17,7 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 		print('Attention:  ', attention)
 		print()
 
-
-	print(channels)
+	# Trials B. Test to improve performance on discriminator: layers += 1
 
 	with tf.variable_scope(name, reuse=reuse):
 
@@ -31,7 +28,6 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 			# Categorical Embedding.
 			print(label_t)
 			if label_t == 'cat':
-				# emb = embedding(shape=(label_dim, embedding_size), init=init, regularizer=regularizer, power_iterations=1)
 				emb = embedding(shape=(label_dim, embedding_size), init=init, power_iterations=1)
 				index = tf.argmax(label, axis=-1)
 				label_emb = tf.nn.embedding_lookup(emb, index)
@@ -49,7 +45,9 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 								 spectral=spectral, init=init, regularizer=regularizer, activation=activation)
 			# Attention layer. 
 			if attention is not None and net.shape.as_list()[1]==attention:
-				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+				# Trials A. Test for better image quality (56x56): 
+				net = attention_block_2(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+				# net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
 			
 			# Down.
 			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
@@ -74,13 +72,165 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 			logits = logits_net
 			output = sigmoid(logits)
 
-		if infoGAN:
-			mean_c_x = dense(inputs=net, out_dim=c_dim, spectral=spectral, init=init, regularizer=regularizer, scope=3)
-			logs2_c_x = dense(inputs=net, out_dim=c_dim, spectral=spectral, init=init, regularizer=regularizer, scope=4)
-			return output, logits, mean_c_x, logs2_c_x 
 
 	print()
 	return output, logits
+
+
+def discriminator_resnet_mask_class(images, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', label=None, name='discriminator'):
+	net = images
+	# channels = [32, 64, 128, 256, 512, 1024, 2048]
+	channels = [32, 64, 128, 256, 512, 1024]
+
+	if display:
+		print('DISCRIMINATOR INFORMATION:', name)
+		print('Total  Channels: ', channels)
+		print('Chosen Channels: ', channels[:layers])
+		print('Normalization: ', normalization)
+		print('Activation: ', activation)
+		print('Attention:  ', attention)
+		print()
+
+	with tf.variable_scope(name, reuse=reuse):
+
+		# Discriminator with conditional projection.
+		batch_size, label_dim = label.shape.as_list()
+		embedding_size = channels[-1]
+
+		for layer in range(layers):
+			# ResBlock.
+			net = residual_block(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer, is_training=True, normalization=normalization, use_bias=True, 
+								 spectral=spectral, init=init, regularizer=regularizer, activation=activation)
+			# Attention layer. 
+			if attention is not None and net.shape.as_list()[1]==attention:
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+			
+			# Down.
+			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
+			if normalization is not None: net = normalization(inputs=net, training=True)
+			net = activation(net)
+			
+		# Flatten.
+		net = tf.layers.flatten(inputs=net)
+
+		feature_space = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=1)				
+		net = activation(feature_space)
+
+		# Dense Classes
+		class_logits = dense(inputs=net, out_dim=label_dim, spectral=spectral, init=init, regularizer=regularizer, scope=3)		
+		class_logits = tf.nn.log_softmax(class_logits)
+		# One encoding for label input
+		logits = class_logits*label
+		logits = tf.reduce_sum(logits, axis=-1)
+		output = sigmoid(logits)
+
+		
+	print()
+	return output, logits, feature_space
+
+
+def discriminator_resnet_class(images, layers, spectral, activation, reuse, l_dim, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', name='discriminator'):
+	net = images
+	# channels = [32, 64, 128, 256, 512, 1024, 2048]
+	channels = [32, 64, 128, 256, 512, 1024]
+
+	if display:
+		print('DISCRIMINATOR INFORMATION:', name)
+		print('Total  Channels: ', channels)
+		print('Chosen Channels: ', channels[:layers])
+		print('Normalization: ', normalization)
+		print('Activation: ', activation)
+		print('Attention:  ', attention)
+		print()
+
+	with tf.variable_scope(name, reuse=reuse):
+
+		for layer in range(layers):
+			# ResBlock.
+			net = residual_block(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer, is_training=True, normalization=normalization, use_bias=True, 
+								 spectral=spectral, init=init, regularizer=regularizer, activation=activation)
+			# Attention layer. 
+			if attention is not None and net.shape.as_list()[1]==attention:
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+			
+			# Down.
+			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
+			if normalization is not None: net = normalization(inputs=net, training=True)
+			net = activation(net)
+			
+		# Flatten.
+		net = tf.layers.flatten(inputs=net)
+
+		 # Dense.
+		feature_space = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=2)		
+		net = activation(feature_space)		
+
+		# Dense
+		logits = dense(inputs=net, out_dim=1, spectral=spectral, init=init, regularizer=regularizer, scope=3)		
+		output = sigmoid(logits)
+
+		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=4)		
+		net = activation(net)	
+
+		# Dense Classes
+		class_logits = dense(inputs=net, out_dim=l_dim, spectral=spectral, init=init, regularizer=regularizer, scope=5)		
+
+	print()
+	return output, logits, feature_space, class_logits
+
+
+def discriminator_resnet_class2(images, layers, spectral, activation, reuse, l_dim, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', name='discriminator'):
+	net = images
+	# channels = [32, 64, 128, 256, 512, 1024, 2048]
+	channels = [32, 64, 128, 256, 512, 1024]
+
+	# New
+	layers = layers + 1
+
+	if display:
+		print('DISCRIMINATOR INFORMATION:', name)
+		print('Total  Channels: ', channels)
+		print('Chosen Channels: ', channels[:layers])
+		print('Normalization: ', normalization)
+		print('Activation: ', activation)
+		print('Attention:  ', attention)
+		print()
+
+	with tf.variable_scope(name, reuse=reuse):
+
+		for layer in range(layers):
+			# ResBlock.
+			net = residual_block(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer, is_training=True, normalization=normalization, use_bias=True, 
+								 spectral=spectral, init=init, regularizer=regularizer, activation=activation)
+			# Attention layer. 
+			if attention is not None and net.shape.as_list()[1]==attention:
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+			
+			# Down.
+			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
+			if normalization is not None: net = normalization(inputs=net, training=True)
+			net = activation(net)
+			
+		# New
+		# Flatten.
+		net = tf.layers.flatten(inputs=net)
+
+		# Dense.
+		feature_space = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=2)		
+		net = activation(feature_space)		
+
+		# Dense
+		logits = dense(inputs=net, out_dim=1, spectral=spectral, init=init, regularizer=regularizer, scope=3)		
+		output = sigmoid(logits)
+
+		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=4)		
+		net = activation(net)	
+
+		# Dense Classes
+		class_logits = dense(inputs=net, out_dim=l_dim, spectral=spectral, init=init, regularizer=regularizer, scope=5)			
+
+	print()
+	return output, logits, feature_space, class_logits
 
 
 def discriminator_resnet_incr(images, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', label=None, label_t='cat', infoGAN=False, c_dim=None, name='discriminator'):
@@ -118,12 +268,6 @@ def discriminator_resnet_incr(images, layers, spectral, activation, reuse, init=
 		# Flatten.
 		net = tf.layers.flatten(inputs=net)
 
-		shape = int(np.product(net.shape.as_list()[1:3])/4)
-		# # Dense.
-		# net = dense(inputs=net, out_dim=shape, spectral=spectral, init=init, regularizer=regularizer, scope=1)				
-		# if normalization is not None: net = normalization(inputs=net, training=True)
-		# net = activation(net)
-
 		# Dense.
 		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=2)				
 		if normalization is not None: net = normalization(inputs=net, training=True)
@@ -135,99 +279,6 @@ def discriminator_resnet_incr(images, layers, spectral, activation, reuse, init=
 
 	print()
 	return output, logits
-
-
-
-def encoder_resnet(images, z_dim, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale'):
-	net = images
-	channels = [32, 64, 128, 256, 512, 1024]
-	if display:
-		print('ENCODER INFORMATION:')
-		print('Channels: ', channels[:layers])
-		print('Normalization: ', normalization)
-		print('Activation: ', activation)
-		print('Attention:  ', attention)
-		print()
-
-	with tf.variable_scope('encoder', reuse=reuse):
-
-		for layer in range(layers+1):
-			# ResBlock.
-			net = residual_block(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer, is_training=True, normalization=normalization, use_bias=True, spectral=spectral, init=init, regularizer=regularizer, activation=activation)
-			
-			# Attention layer. 
-			if attention is not None and net.shape.as_list()[1]==attention: net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
-			
-			# Down.
-			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
-			if normalization is not None: net = normalization(inputs=net, training=True, scope=layer)
-			net = activation(net)
-			
-		# Flatten.
-		net = tf.layers.flatten(inputs=net)
-
-		# Dense.
-		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=1)				
-		if normalization is not None: net = normalization(inputs=net, training=True)
-		net = activation(net)
-
-		# Dense
-		w_latent = dense(inputs=net, out_dim=z_dim, spectral=spectral, init=init, regularizer=regularizer, scope=2)		
-
-	print()
-	return w_latent
-
-
-def encoder_resnet_incr(images, z_dim, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', name='encoder'):
-	net = images
-	channels = [32, 64, 128, 256, 512, 1024]
-	if display:
-		print('ENCODER INFORMATION:')
-		print('Channels: ', channels[:layers])
-		print('Normalization: ', normalization)
-		print('Activation: ', activation)
-		print('Attention:  ', attention)
-		print()
-
-	with tf.variable_scope(name, reuse=reuse):
-
-		layer = 0
-		net = convolutional(inputs=net, output_channels=channels[layer], filter_size=3, stride=1, padding='SAME', conv_type='convolutional', spectral=spectral, init=init, regularizer=regularizer, scope=layer)
-
-		for layer in range(layers):
-			# ResBlock.
-			net = residual_block(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer, is_training=True, normalization=normalization, use_bias=True, spectral=spectral, init=init, regularizer=regularizer, activation=activation)
-			# Attention layer. 
-			if attention is not None and net.shape.as_list()[1]==attention: net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
-			
-			# Down.
-			layer_channel = layer+1
-			if layer == layers - 1:
-				layer_channel = -2
-			net = convolutional(inputs=net, output_channels=channels[layer_channel], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer+1)
-			if normalization is not None: net = normalization(inputs=net, training=True)
-			net = activation(net)
-			
-		# Flatten.
-		net = tf.layers.flatten(inputs=net)
-
-		# shape = int(np.product(net.shape.as_list()[1:3])/4)
-		# # Dense.
-		# net = dense(inputs=net, out_dim=shape, spectral=spectral, init=init, regularizer=regularizer, scope=1)				
-		# if normalization is not None: net = normalization(inputs=net, training=True)
-		# net = activation(net)
-
-		# Dense.
-		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=2)				
-		if normalization is not None: net = normalization(inputs=net, training=True)
-		net = activation(net)
-
-		# Dense
-		w_latent = dense(inputs=net, out_dim=z_dim, spectral=spectral, init=init, regularizer=regularizer, scope=3)	
-
-
-	print()
-	return w_latent
 
 
 def discriminator(images, layers, spectral, activation, reuse, normalization=None):
@@ -263,4 +314,34 @@ def discriminator(images, layers, spectral, activation, reuse, normalization=Non
 
 	print()
 	return output, logits
+
+
+def discriminator_encoder(enconding, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, name='dis_encoding'):
+	net = enconding
+	channels = [150, 100, 50, 25, 12]
+	# channels = [200, 150, 100, 50, 24]
+	if display:
+		print('DISCRIMINATOR-ENCODER INFORMATION:')
+		print('Channels: ', channels[:layers])
+		print('Normalization: ', normalization)
+		print('Activation: ', activation)
+		print()
+
+	with tf.variable_scope(name, reuse=reuse):
+		for layer in range(layers):
+
+			# Residual Dense layer.
+			net = residual_block_dense(inputs=net, scope=layer, is_training=True, normalization=normalization, spectral=spectral, activation=activation, init=init, regularizer=regularizer, display=True)
+
+			# Dense layer downsample dim.
+			net = dense(inputs=net, out_dim=channels[layer], spectral=spectral, init=init, regularizer=regularizer, scope=layer)				
+			if normalization is not None: net = normalization(inputs=net, training=True)
+			net = activation(net)
+
+		# Dense
+		logits_net = dense(inputs=net, out_dim=1, spectral=spectral, init=init, regularizer=regularizer, scope=layer+1)		
+		output = sigmoid(logits_net)
+
+	print()
+	return output, logits_net
 
