@@ -85,7 +85,7 @@ def attention_block(x, scope, spectral=True, init='xavier', regularizer=None, po
 def attention_block_2(x, scope, spectral=True, init='xavier', regularizer=None, power_iterations=1, display=True):
 
     batch_size, height, width, channels = x.get_shape().as_list()
-    with tf.variable_scope('attention_block_%s' % scope):
+    with tf.variable_scope('attention_block_2_%s' % scope):
 
         # Global value for all pixels, measures how important is the context for each of them.
         gamma = tf.get_variable('gamma', shape=(1), initializer=tf.constant_initializer(0.0))
