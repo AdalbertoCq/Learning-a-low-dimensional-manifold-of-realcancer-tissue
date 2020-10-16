@@ -48,7 +48,7 @@ class PathologyGAN_Encoder(GAN):
 				init = 'orthogonal',		 			# Weight Initialization: Orthogonal in BigGAN.
 				loss_type='relativistic standard',     	# Loss function type: Standard, Least Square, Wasserstein, Wasserstein Gradient Penalty.
 				regularizer_scale=1e-4,      			# Orthogonal regularization.
-				model_name='DePathologyGAN'   			# Name to give to the model.
+				model_name='PathologyGAN_Encoder'   			# Name to give to the model.
 				):
 
 		# Architecture parameters.
