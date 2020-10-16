@@ -94,9 +94,7 @@ def generator_resnet_style(w_input, image_channels, layers, spectral, activation
 
 			# Attention layer. 
 			if attention is not None and net.shape.as_list()[1]==attention:
-				# Trials A. Test for better image quality (56x56): 
-				net = attention_block_2(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
-				# net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
 			if stack_layers:
 				print('Adding layer output to stack layer output.')
 				out_stack_layers.append(net)
