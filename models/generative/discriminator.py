@@ -6,7 +6,7 @@ from models.generative.normalization import *
 
 display = True
 
-def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', label=None, label_t='cat', name='discriminator'):
+def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavier', regularizer=None, normalization=None, attention=None, down='downscale', label=None, label_t='cat', feature_space_flag=False, name='discriminator', realness=1):
 	net = images
 	channels = [32, 64, 128, 256, 512, 1024]
 	if display:
@@ -17,7 +17,7 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 		print('Attention:  ', attention)
 		print()
 
-	# Trials B. Test to improve performance on discriminator: layers += 1
+	# Trials B. Test to improve performance on discriminator: 
 
 	with tf.variable_scope(name, reuse=reuse):
 
@@ -51,7 +51,11 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
 			if normalization is not None: net = normalization(inputs=net, training=True)
 			net = activation(net)
-			
+		
+		# Feature space extraction
+		feature_space = tf.layers.max_pooling2d(inputs=net, pool_size=[2, 2], strides=[2,2])
+		feature_space = tf.layers.flatten(inputs=feature_space)
+
 		# Flatten.
 		net = tf.layers.flatten(inputs=net)
 
@@ -61,7 +65,7 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 		net = activation(net)
 
 		# Dense
-		logits_net = dense(inputs=net, out_dim=1, spectral=spectral, init=init, regularizer=regularizer, scope=2)		
+		logits_net = dense(inputs=net, out_dim=realness, spectral=spectral, init=init, regularizer=regularizer, scope=2)		
 		if label is not None: 
 			inner_prod = tf.reduce_sum(net * label_emb, axis=-1, keepdims=True)
 			logits = logits_net + inner_prod
@@ -70,8 +74,9 @@ def discriminator_resnet(images, layers, spectral, activation, reuse, init='xavi
 			logits = logits_net
 			output = sigmoid(logits)
 
-
 	print()
+	if feature_space_flag:
+		return output, logits, feature_space
 	return output, logits
 
 
@@ -107,12 +112,16 @@ def discriminator_resnet_mask_class(images, layers, spectral, activation, reuse,
 			net = convolutional(inputs=net, output_channels=channels[layer], filter_size=4, stride=2, padding='SAME', conv_type=down, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
 			if normalization is not None: net = normalization(inputs=net, training=True)
 			net = activation(net)
+
+		# Feature space extraction
+		feature_space = tf.layers.max_pooling2d(inputs=net, pool_size=[2, 2], strides=1)
+		feature_space = tf.layers.flatten(inputs=feature_space)
 			
 		# Flatten.
 		net = tf.layers.flatten(inputs=net)
 
-		feature_space = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=1)				
-		net = activation(feature_space)
+		net = dense(inputs=net, out_dim=channels[-1], spectral=spectral, init=init, regularizer=regularizer, scope=1)				
+		net = activation(net)
 
 		# Dense Classes
 		class_logits = dense(inputs=net, out_dim=label_dim, spectral=spectral, init=init, regularizer=regularizer, scope=3)		
