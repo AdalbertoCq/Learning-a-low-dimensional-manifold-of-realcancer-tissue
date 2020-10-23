@@ -262,7 +262,7 @@ class PathologyGAN_Encoder(GAN):
 						epoch_outputs = session.run(model_outputs, feed_dict=feed_dict, options=run_options)
 						update_csv(model=self, file=csvs[0], variables=epoch_outputs, epoch=epoch, iteration=run_epochs, losses=losses)
 					run_epochs += 1
-					break
+					# break
 
 				# Save model.
 				saver.save(sess=session, save_path=checkpoints)
