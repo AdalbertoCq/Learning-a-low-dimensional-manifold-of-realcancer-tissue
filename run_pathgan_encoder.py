@@ -66,11 +66,6 @@ loss_type     = 'relativistic gradient penalty'
 # Parameter to track model performance.
 checkpoint_every = 1
 
-# For testing. 
-if 'mnist' == dataset:
-	attention = None
-	image_channels = 1
-
 # Collect dataset.	
 data = Data(dataset=dataset, marker=marker, patch_h=image_height, patch_w=image_width, n_channels=image_channels, batch_size=batch_size, project_path=dbs_path)
 
