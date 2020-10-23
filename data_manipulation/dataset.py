@@ -1,9 +1,9 @@
 import numpy as np
 import h5py
-
+from data_manipulation.utils import inception_feature_labels
 
 class Dataset:
-    def __init__(self, hdf5_path, patch_h, patch_w, n_channels, batch_size, thresholds=(), labels=True, empty=False):
+    def __init__(self, hdf5_path, patch_h, patch_w, n_channels, batch_size, thresholds=(), labels=None, empty=False, num_clusters=500, clust_percent=1.0):
 
         self.i = 0
         self.batch_size = batch_size
@@ -13,7 +13,16 @@ class Dataset:
         self.patch_w = patch_w
         self.n_channels = n_channels
 
-        self.labels_flag = labels
+        # Options for conditional PathologyGAN
+        self.num_clusters = num_clusters
+        self.clust_percent = clust_percent
+
+        self.labels_name = labels
+        if labels is None:
+            self.labels_flag = False
+        else:
+            self.labels_flag = True
+
         self.hdf5_path = hdf5_path
         if not empty:
             self.images, self.labels = self.get_hdf5_data()
@@ -37,22 +46,29 @@ class Dataset:
 
     def get_hdf5_data(self):
         hdf5_file = h5py.File(self.hdf5_path, 'r')
+        # print('Keys:', hdf5_file.keys())
 
         # Legacy code for initial naming of images, label keys.
+        labels_name = self.labels_name
         naming = list(hdf5_file.keys())
         if 'images' in naming:
             image_name = 'images'
-            labels_name = 'labels'       
+            if labels_name is None:
+                labels_name = 'labels'       
         else:
             for naming in list(hdf5_file.keys()):     
+                print(naming)
                 if 'img' in naming or 'image' in naming:
                     image_name = naming
-                elif 'labels' in naming:
+                elif 'labels' in naming and labels_name is None:
                     labels_name = naming
 
         images = hdf5_file[image_name]
         if self.labels_flag:
-            labels = hdf5_file[labels_name]
+            if self.labels_name == 'inception':
+                labels = inception_feature_labels(self.hdf5_path, image_name, self.patch_h, self.patch_w, self.n_channels, self.num_clusters, self.clust_percent)
+            else:
+                labels = hdf5_file[labels_name]
         else:
             labels = list()
         return images, labels

@@ -103,7 +103,7 @@ def update_csv(model, file, variables, epoch, iteration, losses):
 
 
 def setup_csvs(csvs, model, losses):
-    loss_csv, filters_s_csv, jacob_s_csv, hessian_s_csv = csvs
+    loss_csv = csvs[0]
 
     header = ['Epoch', 'Iteration']
     header.extend(losses)
@@ -111,37 +111,37 @@ def setup_csvs(csvs, model, losses):
         writer = csv.DictWriter(csv_file, fieldnames=header)
         writer.writeheader()
 
-    header = ['Epoch', 'Iteration']
-    header.extend([str(v.name.split(':')[0].replace('/', '_')) for v in model.gen_filters])
-    header.extend([str(v.name.split(':')[0].replace('/', '_')) for v in model.dis_filters])
-    with open(filters_s_csv, 'w') as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=header)
-        writer.writeheader()
+    if len(csvs) > 1: 
 
-    header = ['Epoch', 'Iteration', 'Jacobian Max Singular', 'Jacobian Min Singular']
-    with open(jacob_s_csv, 'w') as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(header)
+        filters_s_csv, jacob_s_csv, hessian_s_csv = csvs[1:]
 
-    header = ['Epoch', 'Iteration']
-    with open(hessian_s_csv, 'w') as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(header)
+        header = ['Epoch', 'Iteration']
+        header.extend([str(v.name.split(':')[0].replace('/', '_')) for v in model.gen_filters])
+        header.extend([str(v.name.split(':')[0].replace('/', '_')) for v in model.dis_filters])
+        with open(filters_s_csv, 'w') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=header)
+            writer.writeheader()
+
+        header = ['Epoch', 'Iteration', 'Jacobian Max Singular', 'Jacobian Min Singular']
+        with open(jacob_s_csv, 'w') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(header)
+
+        header = ['Epoch', 'Iteration']
+        with open(hessian_s_csv, 'w') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(header)
+            
 
 # Setup output folder.
-def setup_output(show_epochs, epochs, data, n_images, z_dim, data_out_path, model_name, restore, save_img):
+def setup_output(data_out_path, model_name, restore):
     os.umask(0o002)
     evaluation_path = os.path.join(data_out_path, 'evaluation')
     checkpoints_path = os.path.join(data_out_path, 'checkpoints')
     checkpoints = os.path.join(checkpoints_path, '%s.ckt' % model_name)
     gen_images_path = os.path.join(data_out_path, 'images')
-    gen_images = os.path.join(gen_images_path, 'gen_images.h5')
-    latent_images = os.path.join(gen_images_path, 'latent_images.h5')
-
+    
     loss_csv = os.path.join(data_out_path, 'loss.csv')
-    filters_s_csv = os.path.join(data_out_path, 'filter_singular_values.csv')
-    jacob_s_csv = os.path.join(data_out_path, 'jacobian_singular_values.csv')
-    hessian_s_csv = os.path.join(data_out_path, 'hessian_singular_values.csv')
     
     if os.path.isdir(gen_images_path):
          shutil.rmtree(gen_images_path)
@@ -154,26 +154,8 @@ def setup_output(show_epochs, epochs, data, n_images, z_dim, data_out_path, mode
         if os.path.isdir(checkpoints_path):
             shutil.rmtree(checkpoints_path)
         os.makedirs(checkpoints_path)
-    
 
-    image_height = data.training.patch_h
-    image_width = data.training.patch_w
-    image_channels = data.training.n_channels
-
-    if save_img:
-        size_img = (epochs*data.training.iterations)//show_epochs+1
-        img_db_shape = (size_img, n_images, image_height, image_width, image_channels)
-        latent_db_shape = (size_img, n_images, z_dim)
-        hdf5_gen = h5py.File(gen_images, mode='w')
-        hdf5_latent = h5py.File(latent_images, mode='w')
-        img_storage = hdf5_gen.create_dataset(name='generated_img', shape=img_db_shape, dtype=np.float32)
-        latent_storage = hdf5_latent.create_dataset(name='generated_img', shape=latent_db_shape, dtype=np.float32)
-    else: 
-        img_storage = None
-        latent_storage = None
-
-    return img_storage, latent_storage, checkpoints, [loss_csv, filters_s_csv, jacob_s_csv, hessian_s_csv]
-
+    return checkpoints, [loss_csv]
 
 # Run session to generate output samples.
 def show_generated(session, z_input, z_dim, output_fake, n_images, label_input=None, labels=None, c_input=None, c_dim=None, dim=20, show=True):
@@ -357,4 +339,19 @@ def display_activations(layer_activations, image, images_row, dim=None):
     scale = 1. / num_channels
     plt.figure(figsize=(scale * grid.shape[1], scale * grid.shape[0]))
     plt.matshow(grid)
+
+def to_categorical(y, num_classes=None, dtype='float32'):
+    y = np.array(y, dtype='int')
+    input_shape = y.shape
+    if input_shape and input_shape[-1] == 1 and len(input_shape) > 1:
+        input_shape = tuple(input_shape[:-1])
+    y = y.ravel()
+    if not num_classes:
+        num_classes = np.max(y) + 1
+    n = y.shape[0]
+    categorical = np.zeros((n, num_classes), dtype=dtype)
+    categorical[np.arange(n), y] = 1
+    output_shape = input_shape + (num_classes,)
+    categorical = np.reshape(categorical, output_shape)
+    return categorical
     
