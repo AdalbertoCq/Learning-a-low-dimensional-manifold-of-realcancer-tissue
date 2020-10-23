@@ -11,7 +11,7 @@ from data_manipulation.utils import *
 
 
 # Gather real samples from train and test sets for FID and other scores.
-def real_samples(data, data_output_path, num_samples=5000, save_img=False):
+def real_samples(data, data_output_path, num_samples=10000, save_img=False):
 	path = os.path.join(data_output_path, 'evaluation')
 	path = os.path.join(path, 'real')
 	path = os.path.join(path, data.dataset)
