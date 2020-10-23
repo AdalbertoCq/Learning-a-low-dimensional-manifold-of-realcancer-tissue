@@ -1,12 +1,13 @@
-import pickle
-import csv
-import os
-import skimage.io
+import matplotlib.pyplot as plt
 import numpy as np
-import sys
+import skimage.io
+import pickle
 import h5py
 import math
-import matplotlib.pyplot as plt
+import copy
+import csv
+import sys
+import os
 
 
 def save_image(img, job_id, name, train=True):
@@ -211,6 +212,7 @@ def write_sprite_image(data, filename=None, metadata=True, row_n=None):
 
     return data
 
+
 def read_hdf5(path, dic):
     hdf5_file = h5py.File(path, 'r')
     image_name = dic
@@ -222,3 +224,85 @@ def read_hdf5(path, dic):
         return None
     return hdf5_file[image_name]
 
+
+# Method to get ImageNet Inception features and cluster them. 
+def inception_feature_labels(hdf5, image_name, patch_h, patch_w, n_channels, num_clusters, clust_percent, batch_size=50):
+    import tensorflow as tf
+    import tensorflow.contrib.gan as tfgan
+    import random
+
+    # Verify HDF5 Data file exists.
+    if not os.path.isfile(hdf5):
+        print('H5 File not found:', hdf5)
+        exit()
+    print('H5 File found:', hdf5)
+
+    # If we already have the file, return labels.
+    hdf5_features = hdf5.replace('.h', '_features_inception_%sclusters.h' % num_clusters)
+    if os.path.isfile(hdf5_features):
+        with h5py.File(hdf5_features, mode='r') as hdf5_features_file:      
+            new_labels = np.array(hdf5_features_file['feat_cluster_labels'])
+            labels = copy.deepcopy(new_labels)
+            print('Feature labels collected.')
+    else:
+        # TensorFlow graph
+        with tf.Graph().as_default():
+            # Resizing and scaling image input to match InceptionV1.
+            images_input = tf.placeholder(dtype=tf.float32, shape=[None, patch_h, patch_w, n_channels], name='images')
+            images = 2*images_input
+            images -= 1
+            images = tf.image.resize_bilinear(images, [299, 299])
+            out_incept_v3 = tfgan.eval.run_inception(images=images, output_tensor='pool_3:0')
+            
+            # Start session
+            with tf.Session() as sess:
+                import umap.umap_ as umap
+                from sklearn.cluster import KMeans
+                print('Starting label clustering in Inception Space...')
+                with h5py.File(hdf5, mode='r') as hdf5_img_file:
+                    with h5py.File(hdf5_features, mode='w') as hdf5_features_file:        
+
+                        # Create storage for features.
+                        images_storage = hdf5_img_file[image_name]
+                        num_samples = images_storage.shape[0]
+                        batches = int(num_samples/batch_size)                        
+                        features_storage = hdf5_features_file.create_dataset(name='features', shape=(num_samples, 2048), dtype=np.float32)
+                        
+                        # Get projections and save them.
+                        print('Projecting images...')
+                        ind = 0
+                        for batch_num in range(batches):
+                            batch_images = images_storage[batch_num*batch_size:(batch_num+1)*batch_size]
+                            if np.amax(batch_images) > 1.0:
+                                batch_images = batch_images/255.
+                            activations = sess.run(out_incept_v3, {images_input: batch_images})
+                            features_storage[batch_num*batch_size:(batch_num+1)*batch_size] = activations
+                            ind += batch_size
+
+                            if ind%10000==0: print('Processed', ind, 'images')
+                        print('Processed', ind, 'images')
+
+                        # Grab selected vector for UMAP and clustering.
+                        print('Starting label clustering in Inception Space...')
+                        all_indx = list(range(num_samples))
+                        random.shuffle(all_indx)
+                        selected_indx = np.array(sorted(all_indx[:int(num_samples*clust_percent)]))
+                        
+                        # UMAP
+                        print('Running UMAP...')
+                        umap_reducer = umap.UMAP(n_components=2, random_state=45)
+                        umap_fitted = umap_reducer.fit(features_storage[selected_indx, :])
+                        embedding_umap_clustering = umap_fitted.transform(features_storage)
+
+                        # K-Means
+                        print('Running K_means...')
+                        feature_labels_storage = hdf5_features_file.create_dataset(name='feat_cluster_labels', shape=[num_samples] + [1], dtype=np.float32)
+                        kmeans = KMeans(init='k-means++', n_clusters=num_clusters, n_init=10).fit(embedding_umap_clustering)
+                        new_classes = kmeans.predict(embedding_umap_clustering)
+                        
+                        # Save storage for cluster labels.
+                        for i in range(num_samples):
+                            feature_labels_storage[i, :] = new_classes[i]
+                        labels = copy.deepcopy(new_classes)
+                        print('Feature labels collected.')
+    return labels
