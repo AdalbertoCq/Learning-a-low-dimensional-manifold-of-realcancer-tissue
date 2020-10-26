@@ -57,7 +57,7 @@ def dump_results(path, results):
 
 
 # Load dataset to compare against.
-data = Data(dataset=dataset, marker=marker, patch_h=image_height, patch_w=image_width, n_channels=img_ch, batch_size=batch_size, project_path=dbs_path, labels='labels')
+data = Data(dataset=dataset, marker=marker, patch_h=image_height, patch_w=image_width, n_channels=img_ch, batch_size=batch_size, project_path=dbs_path, labels=None)
 
 # Grab train, validation, and test sets.
 real_hdf5s = real_samples(data=data, data_output_path=main_path, num_samples=10000, save_img=False)
@@ -76,7 +76,26 @@ num_gene = len(generated_hdf5)
 real_features =  features[:num_real]
 gene_features =  features[num_real:]
 
+
 results = OrderedDict()
+# Check distribution difference between real subsets.
+i_real = 0
+for real_hdf5_i in real_features:	
+	j_real = 0
+	data_type_i = real_hdf5_i.split('_')[-3]
+	results[data_type_i] = OrderedDict()
+	for real_hdf5_j in real_features:	
+		if real_hdf5_i == real_hdf5_j: 
+			continue
+		data_type_j = real_hdf5_j.split('_')[-3]
+		with tf.Graph().as_default():
+			scores = Scores(real_hdf5_i, real_hdf5_j, data_type_i, data_type_j, k=1, display=False)
+			scores.run_scores()
+			results[data_type_i][data_type_j] = scores.fid
+		j_real += 1
+	i_real += 1
+
+# Check distribution difference between real subsets and generated.
 i_real = 0
 for gen_hdf5 in gene_features:
 	epoch = gen_hdf5.split('/')[-2]
