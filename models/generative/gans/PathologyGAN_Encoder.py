@@ -1,21 +1,21 @@
-
-from data_manipulation.utils import *
+from models.generative.discriminator import *
+from models.generative.normalization import *
+from models.generative.regularizers import *
+from models.generative.activations import *
+from models.generative.evaluation import *
+from models.generative.gans.GAN import GAN
+from models.generative.optimizer import *
+from models.generative.generator import *
 from models.evaluation.features import *
-from models.generative.ops import *
+from models.generative.encoder import *
+from data_manipulation.utils import *
 from models.generative.utils import *
 from models.generative.tools import *
 from models.generative.loss import *
-from models.generative.regularizers import *
-from models.generative.activations import *
-from models.generative.normalization import *
-from models.generative.evaluation import *
-from models.generative.optimizer import *
-from models.generative.discriminator import *
-from models.generative.generator import *
-from models.generative.encoder import *
-from models.generative.gans.GAN import GAN
+from models.generative.ops import *
 import tensorflow.compat.v1 as tf
 import numpy as np
+
 
 class PathologyGAN_Encoder(GAN):
 	def __init__(self,
@@ -61,6 +61,7 @@ class PathologyGAN_Encoder(GAN):
 			self.learning_rate_e = learning_rate_d
 		else:
 			self.learning_rate_e = learning_rate_e
+		self.top_k_samples = int(data.batch_size/2.)
 		
 		# Super Initializer.
 		super().__init__(data=data, z_dim=z_dim, use_bn=use_bn, alpha=alpha, beta_1=beta_1, learning_rate_g=learning_rate_g, learning_rate_d=learning_rate_d, 
@@ -113,13 +114,13 @@ class PathologyGAN_Encoder(GAN):
 	def discriminator(self, images, reuse, init, name, label_input=None):
 		output, logits, feature_space = discriminator_resnet(images=images, layers=self.layers, spectral=self.spectral, activation=leakyReLU, reuse=reuse, attention=self.attention, 
 															 normalization=None, feature_space_flag=True, init=init, regularizer=orthogonal_reg(self.regularizer_scale), label=label_input, 
-															 label_t=self.label_t, name=name)
+															 name=name)
 		return output, logits, feature_space
 
 	# Loss Function.
 	def loss(self):
-		loss_dis, loss_gen = losses(self.loss_type, self.output_fake, self.output_real, self.logits_fake, self.logits_real, real_images=self.real_images_1, 
-									fake_images=self.fake_images, discriminator=self.discriminator, gp_coeff=self.gp_coeff, init=self.init, dis_name='discriminator_gen')
+		loss_dis, loss_gen = losses(self.loss_type, self.output_fake, self.output_real, self.logits_fake, self.logits_real, real_images=self.real_images_1, fake_images=self.fake_images, 
+									top_k_samples=self.top_k_samples, discriminator=self.discriminator, gp_coeff=self.gp_coeff, init=self.init, dis_name='discriminator_gen')
 
 		# MSE on Reference W latent and reconstruction, normalized by the dimensionality of the z vector.
 		dimensionality_latent = self.z_dim
@@ -187,7 +188,7 @@ class PathologyGAN_Encoder(GAN):
 			self.train_discriminator, self.train_generator, self.train_encoder  = self.optimization()
 
 	# Training function. 
-	def train(self, epochs, data_out_path, data, restore, print_epochs=10, n_images=25, checkpoint_every=None):
+	def train(self, epochs, data_out_path, data, restore, print_epochs=10, n_images=25, checkpoint_every=None, report=False):
 		run_epochs = 0    
 		saver = tf.train.Saver()
 
@@ -262,7 +263,6 @@ class PathologyGAN_Encoder(GAN):
 						epoch_outputs = session.run(model_outputs, feed_dict=feed_dict, options=run_options)
 						update_csv(model=self, file=csvs[0], variables=epoch_outputs, epoch=epoch, iteration=run_epochs, losses=losses)
 					run_epochs += 1
-					# break
 
 				# Save model.
 				saver.save(sess=session, save_path=checkpoints)
@@ -271,15 +271,15 @@ class PathologyGAN_Encoder(GAN):
 				############################### FID TRACKING ##################################################
 				# Save checkpoint and generate images for FID every X epochs.
 				if (checkpoint_every is not None and epoch % checkpoint_every == 0) or (epochs==epoch):
-					generate_samples_epoch(session=session, model=self, data=data, epoch=epoch, data_out_path=data_out_path, plus=False)
+					generate_samples_epoch(session=session, model=self, data=data, epoch=epoch, data_out_path=data_out_path, report=report)
 
 				########################### IMAGE GENERATION EPOCH ############################################
 				# After each epoch dump a sample of generated images.
 				z_batch_1 = np.random.normal(size=(64, self.z_dim)) 
 				feed_dict = {self.z_input_1: z_batch_1}
 				w_latent_out = session.run([self.w_latent_out], feed_dict=feed_dict)[0]
-				feed_dict = {self.w_latent_in:w_latent_in}
 				w_latent_in = np.tile(w_latent_out[:,:, np.newaxis], [1, 1, self.layers+1])
+				feed_dict = {self.w_latent_in:w_latent_in}
 				gen_samples = session.run([self.output_gen], feed_dict=feed_dict)[0]
 				write_sprite_image(filename=os.path.join(data_out_path, 'images/gen_samples_epoch_%s.png' % epoch), data=gen_samples, metadata=False)
 

@@ -5,8 +5,8 @@ from models.generative.activations import *
 from models.generative.regularizers import *
 
 
-def losses(loss_type, output_fake, output_real, logits_fake, logits_real, real_images=None, fake_images=None, discriminator=None, msg_real=None, msg_fake=None, init=None, gp_coeff=None, mean_c_x_fake=None, 
-           logs2_c_x_fake=None, input_c=None, delta=1, display=True, dis_name='discriminator'):
+def losses(loss_type, output_fake, output_real, logits_fake, logits_real, label=None, real_images=None, fake_images=None, encoder=None, discriminator=None, init=None, gp_coeff=None, hard=None,
+           top_k_samples=None, display=True, enc_name='discriminator', dis_name='discriminator'):
 
     # Variable to track which loss function is actually used.
     loss_print = ''
@@ -44,13 +44,19 @@ def losses(loss_type, output_fake, output_real, logits_fake, logits_real, real_i
             epsilon = tf.random.uniform(shape=tf.stack([tf.shape(real_images)[0], 1, 1, 1]), minval=0.0, maxval=1.0, dtype=tf.float32, name='epsilon')
             x_gp = real_images*(1-epsilon) + fake_images*epsilon
 
-            if msg_real is None:
-                out = discriminator(x_gp, True, init=init, name=dis_name)
+                
+            if encoder is None:
+                if label is not None: 
+                    if hard is not None:
+                        out = discriminator(x_gp, label_input=label, reuse=True, init=init, hard=hard, name=dis_name)
+                    else:
+                        out = discriminator(x_gp, label_input=label, reuse=True, init=init, name=dis_name)
+                else:
+                    out = discriminator(x_gp, reuse=True, init=init, name=dis_name)
             else:
-                msg_layers = list()
-                for i, l in enumerate(msg_real):
-                    msg_layers.append(msg_real[i]*(1-epsilon) + msg_fake[i]*epsilon)
-                out = discriminator(images=x_gp, msg_layers=msg_layers, reuse=True, init=init, name=dis_name)
+                out_1 = encoder(x_gp, True, is_train=True, init=init, name=enc_name)
+                out = discriminator(out_1, reuse=True, init=init, name=dis_name)
+            
             logits_gp = out[1]
 
             # Calculating Gradient Penalty.
@@ -64,16 +70,52 @@ def losses(loss_type, output_fake, output_real, logits_fake, logits_real, real_i
             loss_dis = loss_dis_real + loss_dis_fake + (gp_coeff*grad_penalty)
 
             # Generator loss.
-            loss_gen_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_diff_fake_real, labels=tf.ones_like(logits_fake)))
-            loss_gen_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_diff_real_fake, labels=tf.zeros_like(logits_fake)))
+            if top_k_samples is not None:
+                logits_diff_fake_real_top =  tf.math.top_k(input= tf.reshape( logits_diff_fake_real, (1, -1)), k=top_k_samples, sorted=False, name='top_performance_samples_max')[0]
+                logits_diff_real_fake_min = -tf.math.top_k(input= tf.reshape(-logits_diff_real_fake, (1, -1)), k=top_k_samples, sorted=False, name='top_performance_samples_min')[0]
+                logits_diff_fake_real_top = tf.reshape(logits_diff_fake_real_top, (-1,1))
+                logits_diff_real_fake_min = tf.reshape(logits_diff_real_fake_min, (-1,1))
+                loss_gen_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_diff_fake_real_top, labels=tf.ones_like(logits_diff_fake_real_top)))
+                loss_gen_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_diff_real_fake_min, labels=tf.zeros_like(logits_diff_real_fake_min)))
+            else:
+                loss_gen_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_diff_fake_real, labels=tf.ones_like(logits_fake)))
+                loss_gen_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_diff_real_fake, labels=tf.zeros_like(logits_fake)))
             loss_gen = loss_gen_real + loss_gen_fake
-            loss_print += 'gradient penalty '
+            loss_print += 'gradient penalty '   
 
     elif 'standard' in loss_type:
-        # Discriminator loss. Uses hinge loss on discriminator.
+
         loss_dis_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_fake, labels=tf.zeros_like(output_fake)))
         loss_dis_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits_real, labels=tf.ones_like(output_fake)*0.9))
-        loss_dis = loss_dis_fake + loss_dis_real
+        
+        if 'gradient penalty' in loss_type:
+            # Calculating X hat.
+            epsilon = tf.random.uniform(shape=tf.stack([tf.shape(real_images)[0], 1, 1, 1]), minval=0.0, maxval=1.0, dtype=tf.float32, name='epsilon')
+            x_gp = real_images*(1-epsilon) + fake_images*epsilon
+
+                
+            if encoder is None:
+                if label is not None: 
+                    out = discriminator(x_gp, label_input=label, reuse=True, init=init, name=dis_name)
+                else:
+                    out = discriminator(x_gp, reuse=True, init=init, name=dis_name)
+            else:
+                out_1 = encoder(x_gp, True, is_train=True, init=init, name=enc_name)
+                out = discriminator(out_1, reuse=True, init=init, name=dis_name)
+            
+            logits_gp = out[1]
+
+            # Calculating Gradient Penalty.
+            grad_gp = tf.gradients(logits_gp, x_gp)
+            l2_grad_gp = tf.sqrt(tf.reduce_sum(tf.square(grad_gp), axis=[1, 2, 3]))
+            grad_penalty= tf.reduce_sum(tf.square(l2_grad_gp-1.0))
+
+            # Discriminator loss. Uses hinge loss on discriminator.
+            loss_dis = loss_dis_fake + loss_dis_real + (gp_coeff*grad_penalty)
+        
+        else:
+            # Discriminator loss. Uses hinge loss on discriminator.
+            loss_dis = loss_dis_fake + loss_dis_real 
 
         # Generator loss.
         # This is where we implement -log[D(G(z))] instead log[1-D(G(z))].
@@ -135,22 +177,8 @@ def losses(loss_type, output_fake, output_real, logits_fake, logits_real, real_i
         print('Loss: Loss %s not defined' % loss_type)
         sys.exit(1)
 
-    if 'infogan' in loss_type:
-        epsilon = 1e-9
-        c_sigma2 = tf.exp(logs2_c_x_fake)
-        log_sigma2 = tf.log(c_sigma2 + epsilon)
-        mean_sq_diff = (input_c - mean_c_x_fake)**2
-        last = mean_sq_diff/(c_sigma2 + epsilon)
-        mututal_loss = tf.reduce_mean(-0.5*(tf.log(2*np.pi)+log_sigma2+last))
-
-        loss_dis -= delta*mututal_loss
-        loss_gen -= delta*mututal_loss
-        loss_print += 'infogan '
-
     if display:
         print('[Loss] Loss %s' % loss_print)
-
-    if 'infogan' in loss_type:
-        return loss_dis, loss_gen, mututal_loss
         
     return loss_dis, loss_gen
+    
