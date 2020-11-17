@@ -1,21 +1,21 @@
-from models.generative.discriminator import *
-from models.generative.normalization import *
-from models.generative.regularizers import *
-from models.generative.activations import *
-from models.generative.evaluation import *
-from models.generative.gans.GAN import GAN
-from models.generative.optimizer import *
-from models.generative.generator import *
-from models.evaluation.features import *
-from models.generative.encoder import *
+
 from data_manipulation.utils import *
+from models.evaluation.features import *
+from models.generative.ops import *
 from models.generative.utils import *
 from models.generative.tools import *
 from models.generative.loss import *
-from models.generative.ops import *
+from models.generative.regularizers import *
+from models.generative.activations import *
+from models.generative.normalization import *
+from models.generative.evaluation import *
+from models.generative.optimizer import *
+from models.generative.discriminator import *
+from models.generative.generator import *
+from models.generative.encoder import *
+from models.generative.gans.GAN import GAN
 import tensorflow.compat.v1 as tf
 import numpy as np
-
 
 class PathologyGAN_Encoder(GAN):
 	def __init__(self,

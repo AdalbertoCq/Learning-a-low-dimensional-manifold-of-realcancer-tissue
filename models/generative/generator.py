@@ -48,11 +48,7 @@ def generator_resnet_style(w_input, image_channels, layers, spectral, activation
 						   attention=None, stack_layers=False, up='upscale', name='generator'):
 		
 	out_stack_layers = list()
-	# channels = [32, 64, 128, 256, 512, 1024, 2048]
 	channels = [32, 64, 128, 256, 512, 1024]
-
-	# i_pixel = 4
-	# i_pixel = 8
 	i_pixel = 7
 
 	reversed_channel = list(reversed(channels[:layers]))
@@ -71,13 +67,11 @@ def generator_resnet_style(w_input, image_channels, layers, spectral, activation
 		
 		# Dense.			
 		label = w_input[:, :, 0]
-		# net = dense(inputs=w_input_block, out_dim=2048, spectral=spectral, init=init, regularizer=regularizer, scope=1)			
 		net = dense(inputs=w_input_block, out_dim=1024, spectral=spectral, init=init, regularizer=regularizer, scope=1)			
 		net = normalization(inputs=net, training=is_train, c=label, spectral=spectral, scope='dense_1')
 		net = activation(net)
 
 		# Dense.
-		# net = dense(inputs=net, out_dim=1024*i_pixel*i_pixel, spectral=spectral, init=init, regularizer=regularizer, scope=2)				
 		net = dense(inputs=net, out_dim=256*i_pixel*i_pixel, spectral=spectral, init=init, regularizer=regularizer, scope=2)				
 		net = normalization(inputs=net, training=is_train, c=label, spectral=spectral, scope='dense_2')
 		net = activation(net)
@@ -95,6 +89,7 @@ def generator_resnet_style(w_input, image_channels, layers, spectral, activation
 			# Attention layer. 
 			if attention is not None and net.shape.as_list()[1]==attention:
 				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+				
 			if stack_layers:
 				print('Adding layer output to stack layer output.')
 				out_stack_layers.append(net)
@@ -118,6 +113,132 @@ def generator_resnet_style(w_input, image_channels, layers, spectral, activation
 	if stack_layers:
 		return output, out_stack_layers
 	return output
+
+
+def generator_resnet_style_modulation(w_input, image_channels, layers, spectral, activation, reuse, is_train, normalization, init='xavier', noise_input_f=False, regularizer=None, cond_label=None, attention=None, up='upscale', name='generator'):
+	channels = [32, 64, 128, 256, 512, 1024]
+	reversed_channel = list(reversed(channels[:layers]))
+	i_pixel = 7
+
+	if display:
+		print('GENERATOR INFORMATION:')
+		print('Channels:      ', channels[:layers])
+		print('Normalization: ', normalization)
+		print('Activation:    ', activation)
+		print('Attention H/W: ', attention)
+		print()
+
+	with tf.variable_scope(name, reuse=reuse):
+
+		w_input_block = w_input[:, :, 0]
+		label = w_input[:, :, 0]
+
+		# Dense.			
+		net = dense(inputs=w_input_block, out_dim=1024, spectral=spectral, init=init, regularizer=regularizer, scope=1)			
+		if normalization is not None: net = normalization(inputs=net, training=is_train, c=label, spectral=spectral, scope='dense_1')
+		net = activation(net)
+
+		# Dense.
+		net = dense(inputs=net, out_dim=256*i_pixel*i_pixel, spectral=spectral, init=init, regularizer=regularizer, scope=2)				
+		if normalization is not None: net = normalization(inputs=net, training=is_train, c=label, spectral=spectral, scope='dense_2')
+		net = activation(net)
+		
+		# Reshape
+		net = tf.reshape(tensor=net, shape=(-1, i_pixel, i_pixel, 256), name='reshape')
+
+		for layer in range(layers):
+
+			label = w_input[:, :, layer]
+			# ResBlock.
+			net = residual_block_mod(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer, is_training=is_train, spectral=spectral, init=init, regularizer=regularizer, noise_input_f=noise_input_f, activation=activation, normalization=normalization, cond_label=label)
+
+			# Attention layer. 
+			if attention is not None and net.shape.as_list()[1]==attention:
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+
+			# Up.
+			label = w_input[:, :, layer+1]
+			net = convolutional(inputs=net, output_channels=reversed_channel[layer], filter_size=2, stride=2, padding='SAME', conv_type=up, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
+			if noise_input_f:
+				net = noise_input(inputs=net, scope=layer)
+			net = activation(net)
+
+		# net = residual_block_mod(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer+1, is_training=is_train, spectral=spectral, init=init, regularizer=regularizer, noise_input_f=noise_input_f, activation=activation, normalization=normalization, cond_label=label)
+		# logits = conv_mod(inputs=net, label=label, output_channels=image_channels, filter_size=3, stride=1, padding='SAME', conv_type='convolutional', scope=layer+1, init=init, regularizer=regularizer, spectral=spectral)
+		logits = convolutional(inputs=net, output_channels=image_channels, filter_size=3, stride=1, padding='SAME', conv_type='convolutional', spectral=spectral, init=init, regularizer=regularizer, scope='logits')
+		output = sigmoid(logits)
+		
+	print()
+	return output
+
+
+def generator_msg(w_input, image_channels, layers, spectral, activation, reuse, is_train, normalization, init='xavier', noise_input_f=False, regularizer=None, cond_label=None, attention=None, up='upscale'):
+	channels = [32, 64, 128, 256, 512, 1024, 2048]
+	# channels = [32, 64, 128, 256, 512, 1024]
+
+	i_pixel = 4
+	msg_layers = list()
+
+	reversed_channel = list(reversed(channels[:layers]))
+	if display:
+		print('GENERATOR INFORMATION:')
+		print('Total  Channels:      ', channels)
+		print('Chosen Channels:      ', channels[:layers])
+		print('Normalization: ', normalization)
+		print('Activation:    ', activation)
+		print('Attention H/W: ', attention)
+		print()
+
+	with tf.variable_scope('generator', reuse=reuse):
+
+		w_input_block = w_input[:, :, 0]
+		
+		# Dense.			
+		label = w_input[:, :, 0]
+		# net = dense(inputs=w_input_block, out_dim=2048, spectral=spectral, init=init, regularizer=regularizer, scope=1)			
+		net = dense(inputs=w_input_block, out_dim=1024, spectral=spectral, init=init, regularizer=regularizer, scope=1)			
+		net = normalization(inputs=net, training=is_train, c=label, spectral=spectral, scope='dense_1')
+		net = activation(net)
+
+		# Dense.
+		# net = dense(inputs=net, out_dim=512*i_pixel*i_pixel, spectral=spectral, init=init, regularizer=regularizer, scope=2)				
+		net = dense(inputs=net, out_dim=256*i_pixel*i_pixel, spectral=spectral, init=init, regularizer=regularizer, scope=2)				
+		net = normalization(inputs=net, training=is_train, c=label, spectral=spectral, scope='dense_2')
+		net = activation(net)
+		
+		# Reshape
+		# net = tf.reshape(tensor=net, shape=(-1, i_pixel, i_pixel, 512), name='reshape')
+		net = tf.reshape(tensor=net, shape=(-1, i_pixel, i_pixel, 256), name='reshape')
+
+		# Loop for convolutional layers.
+		for layer in range(layers):
+			# ResBlock.
+			label = w_input[:, :, layer]
+			net = residual_block(inputs=net, filter_size=3, stride=1, padding='SAME', scope=layer, is_training=is_train, spectral=spectral, init=init, regularizer=regularizer, noise_input_f=noise_input_f, activation=activation, normalization=normalization, cond_label=label)
+
+			# Attention layer. 
+			if attention is not None and net.shape.as_list()[1]==attention:
+				net = attention_block(net, spectral=True, init=init, regularizer=regularizer, scope=layers)
+
+			# MSG layer.
+			if net.shape.as_list()[1]>=64:
+				msg_i = convolutional(inputs=net, output_channels=image_channels, filter_size=1, stride=1, padding='SAME', conv_type='convolutional', spectral=spectral, init=init, regularizer=regularizer, scope='msg_%s'%layer)
+				msg_layers.append(msg_i)
+
+			# Convolutional Up.
+			label = w_input[:, :, layer+1]
+			net = convolutional(inputs=net, output_channels=reversed_channel[layer], filter_size=2, stride=2, padding='SAME', conv_type=up, spectral=spectral, init=init, regularizer=regularizer, scope=layer)
+			if noise_input_f: net = noise_input(inputs=net, scope=layer)
+			net = normalization(inputs=net, training=is_train, c=label, spectral=spectral, scope=layer)
+			net = activation(net)
+		
+		net = convolutional(inputs=net, output_channels=image_channels, filter_size=3, stride=1, padding='SAME', conv_type='convolutional', spectral=spectral, init=init, regularizer=regularizer, scope='conv_logits')
+		logits = residual_block(inputs=net, filter_size=3, stride=1, padding='SAME', scope='resnet_logits', is_training=is_train, spectral=spectral, init=init, regularizer=regularizer, noise_input_f=noise_input_f, activation=activation, normalization=normalization, cond_label=label)
+		logits = convolutional(inputs=net, output_channels=image_channels, filter_size=3, stride=1, padding='SAME', conv_type='convolutional', spectral=spectral, init=init, regularizer=regularizer, scope='logits')
+		output = sigmoid(logits)
+		
+	print()
+	return output, msg_layers
 
 
 def generator_resnet(z_input, image_channels, layers, spectral, activation, reuse, is_train, normalization, init='xavier', noise_input_f=False, regularizer=None, cond_label=None, attention=None, up='upscale', bigGAN=False, name='generator'):

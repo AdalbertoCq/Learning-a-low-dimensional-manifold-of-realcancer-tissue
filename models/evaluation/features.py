@@ -1,14 +1,14 @@
-import os
-import tensorflow as tf
-import numpy as np
-import h5py
-import random
-import shutil
-import matplotlib
-import tensorflow.contrib.gan as tfgan
+from models.evaluation.latent_space import *
 from models.generative.utils import *
 from data_manipulation.utils import *
-
+import tensorflow.contrib.gan as tfgan
+import tensorflow as tf
+import numpy as np
+import matplotlib
+import random
+import shutil
+import h5py
+import os
 
 # Gather real samples from train and test sets for FID and other scores.
 def real_samples(data, data_output_path, num_samples=10000, save_img=False):
@@ -123,7 +123,7 @@ def inception_tf_feature_activations(hdf5s, input_shape, batch_size):
 
 
 # Generate random samples from a model, it also dumps a sprite image width them.
-def generate_samples_epoch(session, model, data, epoch, data_out_path, num_samples=10000, batch_size=50, plus=True):
+def generate_samples_epoch(session, model, data, epoch, data_out_path, num_samples=10000, batch_size=50, one_hot_encoder=None, report=False):
 	# Handle directories and copies.
 	evaluation_path = os.path.join(data_out_path, 'evaluation')
 	epoch_path = os.path.join(evaluation_path, 'epoch_%s' % epoch)
@@ -135,10 +135,13 @@ def generate_samples_epoch(session, model, data, epoch, data_out_path, num_sampl
 	# Setup HDF5 file.
 	hdf5_path = os.path.join(epoch_path, 'hdf5_epoch_%s_generated_images.h5' % epoch)	
 	hdf5_file = h5py.File(hdf5_path, mode='w')
-	if plus:
-		latent_shape = [num_samples, model.complete_z_dim]
-	else:
-		latent_shape = [num_samples, model.z_dim]
+	latent_shape = [num_samples, model.z_dim]
+	if one_hot_encoder is not None:
+		lemb_shape = [num_samples] + [model.embedding_size]
+		z_storage = hdf5_file.create_dataset(name='z_latent', shape=latent_shape, dtype=np.float32)
+		label_storage = hdf5_file.create_dataset(name='labels', shape=[num_samples, 1], dtype=np.int32)
+		lemb_storage = hdf5_file.create_dataset(name='label_emb', shape=lemb_shape, dtype=np.float32)
+		latent_shape = [num_samples, model.complete_z_dim]		
 	img_storage = hdf5_file.create_dataset(name='images', shape=[num_samples, data.patch_h, data.patch_w, data.n_channels], dtype=np.float32)
 	w_storage   = hdf5_file.create_dataset(name='w_latent', shape=latent_shape, dtype=np.float32)
 
@@ -148,10 +151,11 @@ def generate_samples_epoch(session, model, data, epoch, data_out_path, num_sampl
 		z_batch_1 = np.random.normal(size=(batch_size, model.z_dim))
 
 		# Mapping to latent space W.
-		if plus:
-			batch_labels = one_hot_encoder.transform(np.random.randint(model.k, size=(batch_size,1)))
+		if one_hot_encoder is not None:
+			z_label_batch_int = np.random.choice(model.labels_unique[:,0], p=model.categorical, size=(batch_size,1))
+			batch_labels = one_hot_encoder.transform(z_label_batch_int)
 			feed_dict = {model.z_input_1: z_batch_1, model.z_labels:batch_labels}
-			w_latent_batch = session.run([model.w_latent_out], feed_dict=feed_dict)[0]				
+			w_latent_batch, l_embedding_batch = session.run([model.w_latent_out, model.label_emb_gen], feed_dict=feed_dict)
 		else:
 			feed_dict = {model.z_input_1: z_batch_1}
 			w_latent_batch = session.run([model.w_latent_out], feed_dict=feed_dict)[0]
@@ -166,7 +170,19 @@ def generate_samples_epoch(session, model, data, epoch, data_out_path, num_sampl
 				break
 			img_storage[ind] = gen_img_batch[i, :, :, :]
 			w_storage[ind] = w_latent_batch[i, :]
+			if one_hot_encoder is not None:
+				z_storage[ind] = z_batch_1[i, :]
+				label_storage[ind] = z_label_batch_int[i,:].astype(np.int32)
+				lemb_storage[ind] = l_embedding_batch[i, :]
 			ind += 1
+	if report:
+		label_samples = None
+		if one_hot_encoder is not None:
+			label_samples = label_storage
+		try:
+			report_progress_latent(epoch=epoch, w_samples=w_storage, img_samples=img_storage, img_path=hdf5_path.split('/hdf5')[0], label_samples=label_samples)
+		except:
+			print('Issue printing latent space images. Epoch', epoch)
 
 
 # Generate sampeles from PathologyGAN, no encoder.
@@ -253,6 +269,7 @@ def generate_samples_from_checkpoint(model, data, data_out_path, checkpoint, num
 		print('\tFile:', hdf5_path)
 
 	return hdf5_path
+
 
 # Generate sampeles from PathologyGAN, no encoder.
 def generate_samples_from_checkpoint_conditional(model, data, data_out_path, checkpoint, k, num_samples=5000, batches=50, save_img=False):
@@ -348,6 +365,7 @@ def generate_samples_from_checkpoint_conditional(model, data, data_out_path, che
 
 	return hdf5_path
 
+
 # Generate and encode samples from PathologyGAN, with an encoder.
 def generate_encode_samples_from_checkpoint(model, data, data_out_path, checkpoint, num_samples=5000, batches=50):
 	path = os.path.join(data_out_path, 'evaluation')
@@ -434,6 +452,7 @@ def generate_encode_samples_from_checkpoint(model, data, data_out_path, checkpoi
 		print('\tFile:', hdf5_path)
 
 	return hdf5_path
+
 
 # Encode real images and regenerate from PathologyGAN, with an encoder.
 def real_encode_eval_from_checkpoint(model, data, data_out_path, checkpoint, real_hdf5, type_set, num_samples=5000, batches=50):
@@ -527,6 +546,7 @@ def real_encode_eval_from_checkpoint(model, data, data_out_path, checkpoint, rea
 
 	return hdf5_path
 
+
 # Encode real images for prognosis.
 def real_encode_from_checkpoint(model, data, data_out_path, checkpoint, real_hdf5, batches=50, save_img=False):
 	os.umask(0o002)
@@ -563,10 +583,14 @@ def real_encode_from_checkpoint(model, data, data_out_path, checkpoint, real_hdf
 					key_shape = hdf5_file[key].shape
 					dtype = hdf5_file[key].dtype
 					num_samples = key_shape[0]
+					if 'PathologyGAN_Encoder' in model.model_name:
+						latent_shape = [num_samples] + [model.z_dim]
+					elif 'PathologyGAN_plus' in model.model_name:
+						latent_shape = [num_samples] + [model.complete_z_dim]
 
 					if 'image' in key or 'img' in key:
 						if save_img: img_storage = hdf5_file_w.create_dataset(name='%s_prime' % key, shape=key_shape, dtype=np.float32)
-						w_storage = hdf5_file_w.create_dataset(name='%s_w_latent' % key, shape=[num_samples] + [model.z_dim], dtype=np.float32)
+						w_storage = hdf5_file_w.create_dataset(name='%s_w_latent' % key, shape=latent_shape, dtype=np.float32)
 						
 						saver = tf.train.Saver()
 						with tf.Session() as session:
@@ -764,5 +788,104 @@ def discriminator_features_from_checkpoint(model, data, data_out_path, checkpoin
 		print('H5 File already created.')
 		print('H5 File Generated Samples')
 		print('\tFile:', hdf5_path)
+
+	return hdf5_path, num_samples
+
+
+def real_encode_contrastive_from_checkpoint(model, data, data_out_path, checkpoint, real_hdf5, batches=50, save_img=False):
+	# Directory handling.
+	path = os.path.join(data_out_path, 'evaluation')
+	path = os.path.join(path, model.model_name)
+	path = os.path.join(path, data.dataset)
+	res = 'h%s_w%s_n%s_zdim%s' % (data.patch_h, data.patch_w, data.n_channels, model.z_dim)
+	path = os.path.join(path, res)
+	if not os.path.isdir(path):
+		os.makedirs(path)
+	if not os.path.isfile(real_hdf5):
+		print('H5 File not found:', real_hdf5)
+		exit()
+
+	# Extracting name for projections.
+	name_file = real_hdf5.split('/')[-1]
+	hdf5_path = os.path.join(path, name_file)
+	# Check if file is already there.
+	print('H5 Projections file path:', hdf5_path)
+	if not os.path.isfile(hdf5_path):
+
+		# H5 File specifications and creation.
+		with h5py.File(real_hdf5, mode='r') as hdf5_file:
+			with h5py.File(hdf5_path, mode='w') as hdf5_file_w:
+
+				# Iterate through H5 datasets.
+				for key in hdf5_file.keys():
+					print('\t Key: %s' % key)
+					key_shape = hdf5_file[key].shape
+					dtype = hdf5_file[key].dtype
+					num_samples = key_shape[0]
+
+					# Processing the image dataset.
+					if 'image' in key or 'img' in key:
+						latent_shape = [num_samples] + [model.h_rep_t1.shape[1]]
+						h_storage = hdf5_file_w.create_dataset(name='%s_h_latent' % key, shape=latent_shape, dtype=np.float32)
+						if save_img: img_storage = hdf5_file_w.create_dataset(name='%s' % key, shape=key_shape, dtype=np.float32)
+						
+						saver = tf.train.Saver()
+						with tf.Session() as session:
+
+							# Initializer and restoring model.
+							session.run(tf.global_variables_initializer())
+							saver.restore(session, checkpoint)
+
+							print('Number of Real Images:', num_samples)
+							print('Starting encoding...')
+
+							ind = 0
+							while ind < num_samples:					
+								# Image batch construction.
+								if (ind + batches) < num_samples:
+									real_img_batch = hdf5_file[key][ind: ind+batches, :, :, :]/255.
+									
+								else:
+									real_img_batch = hdf5_file[key][ind:, :, :, :]/255.
+								# Encode real images into W latent space.
+								feed_dict = {model.real_images_2:real_img_batch}
+								h_rep_batch = session.run([model.h_rep_out], feed_dict=feed_dict)[0]
+								# Save batch samples into storage.
+								for i in range(batches):
+									if ind == num_samples:
+										break
+									h_storage[ind] = h_rep_batch[i, :]
+									if save_img: img_storage[ind] = real_img_batch[i, :, :, :]
+									ind += 1
+								# Report progress.
+								if ind%10000==0: print('Processed', ind, 'images')
+							print(ind, 'Encoded Images')
+					# Carry on any other dataset.
+					else:
+						storage = hdf5_file_w.create_dataset(name=key, shape=key_shape, dtype=dtype)
+						ind = 0
+						while ind < num_samples:
+							# Real images.
+							if (ind + batches) < num_samples:
+								info_batch = hdf5_file[key][ind:ind+batches]
+							else:
+								info_batch = hdf5_file[key][ind:]
+
+							# Fill in storage for latent and image.
+							for i in range(batches):
+								if ind == num_samples:
+									break
+
+								# Reconstructed images.
+								storage[ind] = info_batch[i]
+								ind += 1
+	# H5 File already created.													
+	else:
+		# Retrieve number of samples.
+		with h5py.File(hdf5_path, mode='r') as hdf5_file:
+			for key in hdf5_file.keys():
+				num_samples = key_shape.shape[0]
+				break
+		print('H5 File already created.')
 
 	return hdf5_path, num_samples

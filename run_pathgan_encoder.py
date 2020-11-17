@@ -9,26 +9,30 @@ os.umask(0o002)
 parser = argparse.ArgumentParser(description='PathologyGAN Encoder trainer.')
 parser.add_argument('--model',         dest='model',         type=str,   default='PathologyGAN_Encoder',   help='Model name.')
 parser.add_argument('--img_size',      dest='img_size',      type=int,   default=224,                      help='Image size for the model.')
-parser.add_argument('--img_ch',        dest='img_ch',        type=int,   default=3,                        help='Image size for the model.')
+parser.add_argument('--img_ch',        dest='img_ch',        type=int,   default=3,                        help='Number of channels for the model.')
 parser.add_argument('--dataset',       dest='dataset',       type=str,   default='vgh_nki',                help='Dataset to use.')
 parser.add_argument('--marker',        dest='marker',        type=str,   default='he',                     help='Marker of dataset to use.')
 parser.add_argument('--z_dim',         dest='z_dim',         type=int,   default=200,                      help='Latent space size.')
 parser.add_argument('--epochs',        dest='epochs',        type=int,   default=45,                       help='Number epochs to run: default is 45 epochs.')
 parser.add_argument('--batch_size',    dest='batch_size',    type=int,   default=64,                       help='Batch size, default size is 64.')
 parser.add_argument('--dbs_path',      dest='dbs_path',      type=str,   default=None,                     help='Directory with DBs to use.')
+parser.add_argument('--check_every',   dest='check_every',   type=int,   default=10,                       help='Save checkpoint and generate samples every X epcohs.')
 parser.add_argument('--restore',       dest='restore',       action='store_true', default=False,           help='Restore previous run and continue.')
-args           = parser.parse_args()
-model          = args.model
-image_width    = args.img_size
-image_height   = args.img_size
-image_channels = args.img_ch
-dataset        = args.dataset
-marker         = args.marker
-z_dim          = args.z_dim
-epochs         = args.epochs
-batch_size     = args.batch_size
-dbs_path       = args.dbs_path
-restore        = args.restore
+parser.add_argument('--report',        dest='report',        action='store_true', default=False,           help='Report latent space figures.')
+args             = parser.parse_args()
+model            = args.model
+image_width      = args.img_size
+image_height     = args.img_size
+image_channels   = args.img_ch
+dataset          = args.dataset
+marker           = args.marker
+z_dim            = args.z_dim
+epochs           = args.epochs
+batch_size       = args.batch_size
+dbs_path         = args.dbs_path
+restore          = args.restore
+report           = args.report
+checkpoint_every = args.check_every
 
 # Main paths for data output and databases.
 main_path = os.path.dirname(os.path.realpath(__file__))
@@ -63,9 +67,6 @@ use_bn        = False
 init          = 'orthogonal'
 loss_type     = 'relativistic gradient penalty'
 
-# Parameter to track model performance.
-checkpoint_every = 1
-
 # Collect dataset.	
 data = Data(dataset=dataset, marker=marker, patch_h=image_height, patch_w=image_width, n_channels=image_channels, batch_size=batch_size, project_path=dbs_path)
 
@@ -76,6 +77,6 @@ with tf.Graph().as_default():
     									   attention=attention, spectral=spectral, noise_input_f=noise_input_f, learning_rate_g=learning_rate_g, learning_rate_d=learning_rate_d, 
     									   learning_rate_e=learning_rate_e, beta_2=beta_2, n_critic=n_critic, gp_coeff=gp_coeff, loss_type=loss_type, model_name=model)
    	# Training.
-    losses = pathgan_encoder.train(epochs=epochs, data_out_path=data_out_path, data=data, restore=restore, print_epochs=10, checkpoint_every=checkpoint_every)
+    losses = pathgan_encoder.train(epochs=epochs, data_out_path=data_out_path, data=data, restore=restore, print_epochs=10, checkpoint_every=checkpoint_every, report=report)
 
 
